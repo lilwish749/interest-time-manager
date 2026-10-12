@@ -1,0 +1,6 @@
+# 仅代码仓库:排除 Office 文档与临时文件
+*.docx
+*.pptx
+~$*
+Thumbs.db
+.DS_Store

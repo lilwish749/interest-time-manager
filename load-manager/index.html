@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>兴趣学习负荷管理系统</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark">LMS</span>
+      <span class="brand-name">兴趣学习负荷管理</span>
+    </div>
+    <nav class="nav" id="nav">
+      <a href="#/welcome">首页</a>
+      <a href="#/library">活动库</a>
+      <a href="#/dashboard">周负荷</a>
+      <a href="#/settings">设置</a>
+    </nav>
+  </header>
+
+  <main id="app" class="app"></main>
+
+  <footer class="app-footer">
+    <span>纯静态零依赖 · 数据本地存储 · v1.0</span>
+  </footer>
+
+  <!-- 经典脚本，按依赖顺序加载 -->
+  <script src="data/activities.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/quiz.js"></script>
+  <script src="js/views.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
