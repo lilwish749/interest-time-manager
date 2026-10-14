@@ -50,10 +50,18 @@
   // ===== 默认答案 =====
   function defaultAnswers() {
     return {
-      baseline: { q1: 5, q2: 5, answered: false },
+      baseline: { q1: 5, q2: 5, touched: { q1: false, q2: false }, answered: false },
       channel: { order: ['read', 'audiovisual', 'hands', 'social'], answered: false },
-      pace: { block: 32, stuck: 'search', peakTime: 'morning', attention: null, structureNeed: 0.5, answered: false },
-      social: { openLoop: 0.5, socialPref: 0.3, recovery: 0.65, weeklyHours: 5, answered: false },
+      pace: {
+        block: 32, stuck: 'search', peakTime: 'morning', attention: null, structureNeed: 0.5,
+        answeredQ: { block: false, stuck: false, peak: false, attention: false, structure: false },
+        answered: false
+      },
+      social: {
+        openLoop: 0.5, socialPref: 0.3, recovery: 0.65, weeklyHours: 5,
+        answeredQ: { open: false, socialPref: false, recovery: false, hours: false },
+        answered: false
+      },
       domains: { picks: [], matrix: {}, answered: false },
       extra: { motivation: 0.5, distraction: 0.5, slowTolerance: 0.5, evalAnxiety: 0.5, answered: false }
     };
@@ -75,24 +83,34 @@
       if (person) {
         var b = person.baseline != null ? person.baseline : 50;
         // 反推 q1,q2: 取 T=(q1+(10-q2))/2*10 -> q1+(10-q2)=T/5；这里简单取 q1=T/10, q2=10-T/10
-        state.answers.baseline = { q1: Math.max(0, Math.min(10, Math.round(b / 10))), q2: Math.max(0, Math.min(10, Math.round(10 - b / 10))), answered: !!(person.answered && person.answered.baseline) };
+        var bAns = !!(person.answered && person.answered.baseline);
+        state.answers.baseline = {
+          q1: Math.max(0, Math.min(10, Math.round(b / 10))),
+          q2: Math.max(0, Math.min(10, Math.round(10 - b / 10))),
+          touched: { q1: bAns, q2: bAns },
+          answered: bAns
+        };
         if (person.channel) {
           var chOrder = Object.keys(person.channel).sort(function (a, b) { return person.channel[b] - person.channel[a]; });
           state.answers.channel = { order: chOrder, answered: !!(person.answered && person.answered.channel) };
         }
         if (person.block != null) {
+          var pAns = !!(person.answered && person.answered.pace);
           state.answers.pace.block = person.block;
           state.answers.pace.stuck = person.stuck || 'search';
           state.answers.pace.peakTime = person.peakTime || 'morning';
           state.answers.pace.structureNeed = person.structureNeed != null ? person.structureNeed : 0.5;
-          state.answers.pace.answered = !!(person.answered && person.answered.pace);
+          state.answers.pace.answeredQ = { block: pAns, stuck: pAns, peak: pAns, attention: pAns, structure: pAns };
+          state.answers.pace.answered = pAns;
         }
         if (person.socialPref != null) {
+          var sAns = !!(person.answered && person.answered.social);
           state.answers.social.openLoop = person.openLoop;
           state.answers.social.socialPref = person.socialPref;
           state.answers.social.recovery = person.recovery;
           state.answers.social.weeklyHours = person.weeklyHours;
-          state.answers.social.answered = !!(person.answered && person.answered.social);
+          state.answers.social.answeredQ = { open: sAns, socialPref: sAns, recovery: sAns, hours: sAns };
+          state.answers.social.answered = sAns;
         }
         if (person.domains) {
           var picks = Object.keys(person.domains);
@@ -141,9 +159,11 @@
       var total = 6;
       var pct = (state.screen - 1) / (total - 1) * 100;
       if (state.screen === 1) pct = 4;
+      var left = state.screen === SCR_RESULT ? '已完成' : '第 ' + state.screen + ' / ' + (total - 1) + ' 屏';
+      var rightTxt = state.screen === SCR_RESULT ? '画像已生成' : '预计还需 ' + this._eta() + ' 秒';
       wrap.appendChild(el('div', 'quiz-meta',
-        '<span>第 ' + state.screen + ' / ' + (total - 1) + ' 屏</span>' +
-        '<span id="quiz-eta">预计还需 ' + this._eta() + ' 秒</span>'
+        '<span>' + left + '</span>' +
+        '<span id="quiz-eta">' + rightTxt + '</span>'
       ));
       var bar = el('div', 'quiz-progress');
       var inner = el('div', ''); inner.style.width = pct + '%';
@@ -162,38 +182,92 @@
       back.onclick = function () {
         if (state.screen > 1) { state.screen--; self.render(); }
       };
-      if (state.screen === 1) back.style.visibility = 'hidden';
+      if (state.screen === 1 || state.screen === SCR_RESULT) back.style.visibility = 'hidden';
       actions.appendChild(back);
 
       var right = el('div', 'row');
       if (state.screen < SCR_DOMAINS) {
-        var skip = el('button', 'btn ghost sm', '跳过本题');
-        skip.onclick = function () { self._skipCurrent(); };
-        right.appendChild(skip);
         var next = el('button', 'btn', '下一屏');
-        next.onclick = function () { self._next(); };
+        next.onclick = function () {
+          if (!self._guardCurrent()) return;
+          self._next();
+        };
         right.appendChild(next);
       } else if (state.screen === SCR_DOMAINS) {
-        var skip2 = el('button', 'btn ghost sm', '跳过本题');
-        skip2.onclick = function () { self._skipCurrent(); };
-        right.appendChild(skip2);
-        var finish = el('button', 'btn', '完成画像');
-        finish.onclick = function () { self._finish(); };
+        var finish = el('button', 'btn', '生成我的学习画像');
+        finish.onclick = function () { self._tryFinish(); };
         right.appendChild(finish);
       }
       actions.appendChild(right);
       wrap.appendChild(actions);
     },
 
-    _skipCurrent: function () {
-      // 标记当前屏未答，使用默认值
-      var key = this._screenKey();
-      state.answers[key].answered = false;
-      this._next();
-    },
-
     _screenKey: function () {
       return { 1: 'baseline', 2: 'channel', 3: 'pace', 4: 'social', 5: 'domains' }[state.screen];
+    },
+
+    // 校验某一屏，返回 { messages: [...], qkeys: [...] }，全部通过时 messages 为空
+    _validateScreen: function (key) {
+      var a = state.answers[key];
+      var msgs = [], qkeys = [];
+      if (key === 'baseline') {
+        if (!a.touched.q1) { msgs.push('第 ① 题：拖一拖滑块，告诉我们你有多累'); qkeys.push('baseline-q1'); }
+        if (!a.touched.q2) { msgs.push('第 ② 题：拖一拖滑块，告诉我们难度如何'); qkeys.push('baseline-q2'); }
+      } else if (key === 'channel') {
+        if (!a.answered) { msgs.push('请按你的偏好调整 4 种学习方式的先后顺序（拖动或点箭头均可）'); }
+      } else if (key === 'pace') {
+        var P = { block: '第 ① 题', stuck: '第 ② 题', peak: '第 ③ 题', attention: '第 ④ 题', structure: '第 ⑤ 题' };
+        Object.keys(P).forEach(function (k) {
+          if (!a.answeredQ[k]) { msgs.push(P[k] + '还没有选择'); qkeys.push(k); }
+        });
+      } else if (key === 'social') {
+        var S = { open: '第 ① 题', socialPref: '第 ② 题', recovery: '第 ③ 题', hours: '第 ④ 题' };
+        Object.keys(S).forEach(function (k) {
+          if (!a.answeredQ[k]) { msgs.push(S[k] + '还没有选择'); qkeys.push(k); }
+        });
+      } else if (key === 'domains') {
+        if (!a.picks || a.picks.length === 0) { msgs.push('请至少勾选 1 个你感兴趣的方向'); }
+      }
+      return { messages: msgs, qkeys: qkeys };
+    },
+
+    // 在当前屏展示缺失提示并高亮未答题
+    _showMissing: function (v) {
+      var body = $('.quiz-body');
+      if (!body) return;
+      var old = $('.quiz-missing'); if (old) old.parentNode.removeChild(old);
+      body.querySelectorAll('.quiz-question.missing').forEach(function (q) { q.classList.remove('missing'); });
+      var n = el('div', 'notice warn quiz-missing',
+        '<b>还有 ' + v.messages.length + ' 处未完成：</b>' + v.messages.join('；') + '。完成后才能继续哦。');
+      body.insertBefore(n, body.firstChild);
+      v.qkeys.forEach(function (qk) {
+        var q = body.querySelector('[data-qkey="' + qk + '"]');
+        if (q) q.classList.add('missing');
+      });
+      n.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+
+    // 进入下一屏前的守卫：当前屏必须全部作答
+    _guardCurrent: function () {
+      var v = this._validateScreen(this._screenKey());
+      if (v.messages.length > 0) { this._showMissing(v); return false; }
+      return true;
+    },
+
+    // 点击"生成学习画像"：所有屏都必须完成，否则跳到第一个未完成的屏
+    _tryFinish: function () {
+      var order = [SCR_BASELINE, SCR_CHANNEL, SCR_PACE, SCR_SOCIAL, SCR_DOMAINS];
+      for (var i = 0; i < order.length; i++) {
+        var key = { 1: 'baseline', 2: 'channel', 3: 'pace', 4: 'social', 5: 'domains' }[order[i]];
+        var v = this._validateScreen(key);
+        if (v.messages.length > 0) {
+          state.screen = order[i];
+          this.render();
+          this._showMissing(v);
+          return;
+        }
+      }
+      this._finish();
     },
 
     _next: function () {
@@ -211,24 +285,32 @@
     // ===== 屏 1 基线锚点 =====
     _renderBaseline: function (body) {
       body.appendChild(el('h2', 'quiz-screen-title', '基线锚点'));
-      body.appendChild(el('p', 'quiz-hint', '请回忆你最近一次认真学新东西的经历，凭直觉作答。'));
+      body.appendChild(el('p', 'quiz-hint', '回忆你最近一次认真学新东西的经历，凭直觉作答就好。'));
 
       var a = state.answers.baseline;
-      var q1 = el('div', 'quiz-question');
-      q1.appendChild(el('div', 'q-text', '① 整体来说你有多累？（0=一点也不累，10=精疲力尽）'));
+      var q1 = el('div', 'quiz-question'); q1.dataset.qkey = 'baseline-q1';
+      q1.appendChild(el('div', 'q-text', '① 学完之后，你感觉有多累？'));
       var r1 = el('input'); r1.type = 'range'; r1.min = 0; r1.max = 10; r1.value = a.q1;
       var v1 = el('div', 'range-value', a.q1);
-      r1.oninput = function () { a.q1 = +r1.value; v1.textContent = r1.value; a.answered = true; };
+      r1.oninput = function () {
+        a.q1 = +r1.value; v1.textContent = r1.value;
+        a.touched.q1 = true; a.answered = a.touched.q1 && a.touched.q2;
+        q1.classList.remove('missing');
+      };
       q1.appendChild(r1);
       q1.appendChild(el('div', 'range-labels', '<span>一点也不累</span><span>精疲力尽</span>'));
       q1.appendChild(v1);
       body.appendChild(q1);
 
-      var q2 = el('div', 'quiz-question');
-      q2.appendChild(el('div', 'q-text', '② 这个难度你应付得了吗？（0=很吃力，10=很轻松，反向计分）'));
+      var q2 = el('div', 'quiz-question'); q2.dataset.qkey = 'baseline-q2';
+      q2.appendChild(el('div', 'q-text', '② 这个难度对你来说怎么样？'));
       var r2 = el('input'); r2.type = 'range'; r2.min = 0; r2.max = 10; r2.value = a.q2;
       var v2 = el('div', 'range-value', a.q2);
-      r2.oninput = function () { a.q2 = +r2.value; v2.textContent = r2.value; a.answered = true; };
+      r2.oninput = function () {
+        a.q2 = +r2.value; v2.textContent = r2.value;
+        a.touched.q2 = true; a.answered = a.touched.q1 && a.touched.q2;
+        q2.classList.remove('missing');
+      };
       q2.appendChild(r2);
       q2.appendChild(el('div', 'range-labels', '<span>很吃力</span><span>很轻松</span>'));
       q2.appendChild(v2);
@@ -264,9 +346,10 @@
       function _move(key, dir) {
         var idx = a.order.indexOf(key);
         var ni = idx + dir;
+        a.answered = true; // 任何排序交互都视为已作答
         if (ni < 0 || ni >= a.order.length) return;
         var tmp = a.order[ni]; a.order[ni] = key; a.order[idx] = tmp;
-        a.answered = true; buildList();
+        buildList();
       }
 
       // 拖拽
@@ -297,23 +380,31 @@
     // ===== 屏 3 节奏与结构 =====
     _renderPace: function (body) {
       body.appendChild(el('h2', 'quiz-screen-title', '节奏与结构'));
-      body.appendChild(el('p', 'quiz-hint', '请根据你的真实习惯作答。'));
+      body.appendChild(el('p', 'quiz-hint', '按你的真实习惯选，点选项整行都可以。'));
       var a = state.answers.pace;
 
-      function single(label, opts, current, setter) {
-        var q = el('div', 'quiz-question');
+      function syncAnswered() {
+        var q = a.answeredQ;
+        a.answered = q.block && q.stuck && q.peak && q.attention && q.structure;
+      }
+
+      function single(qkey, label, opts, current, setter) {
+        var q = el('div', 'quiz-question'); q.dataset.qkey = qkey;
         q.appendChild(el('div', 'q-text', label));
         var ol = el('div', 'opt-list');
         opts.forEach(function (o) {
           var item = el('div', 'opt' + (current === o.v ? ' selected' : ''));
-          var inp = el('input'); inp.type = 'radio'; inp.name = label; inp.checked = (current === o.v);
-          inp.onchange = function () {
-            setter(o.v); a.answered = true;
-            ol.querySelectorAll('.opt').forEach(function (x) { x.classList.remove('selected'); });
-            item.classList.add('selected');
-          };
+          var inp = el('input'); inp.type = 'radio'; inp.name = 'pace-' + qkey; inp.checked = (current === o.v);
           item.appendChild(inp);
           item.appendChild(el('span', '', o.label));
+          item.onclick = function () {
+            setter(o.v);
+            a.answeredQ[qkey] = true; syncAnswered();
+            ol.querySelectorAll('.opt').forEach(function (x) { x.classList.remove('selected'); });
+            item.classList.add('selected');
+            inp.checked = true;
+            q.classList.remove('missing');
+          };
           ol.appendChild(item);
         });
         q.appendChild(ol);
@@ -321,11 +412,11 @@
       }
 
       var blockOpts = [
-        { v: 15, label: '≤20 分钟' }, { v: 32, label: '20-45 分钟' },
-        { v: 65, label: '45-90 分钟' }, { v: 100, label: '>90 分钟' }
+        { v: 15, label: '20 分钟以内' }, { v: 32, label: '20–45 分钟' },
+        { v: 65, label: '45–90 分钟' }, { v: 100, label: '90 分钟以上' }
       ];
       var stuckOpts = [
-        { v: 'ask', label: '立刻问人' }, { v: 'search', label: '自己查资料' }, { v: 'switch', label: '先放下去做别的' }
+        { v: 'ask', label: '马上问别人' }, { v: 'search', label: '自己查资料' }, { v: 'switch', label: '先放一放，换件事做' }
       ];
       var peakOpts = [
         { v: 'morning', label: '早晨' }, { v: 'forenoon', label: '上午' }, { v: 'afternoon', label: '下午' },
@@ -336,97 +427,101 @@
         { v: 'agree', label: '比较同意' }, { v: 'agree_strong', label: '非常同意' }
       ];
       var structOpts = [
-        { v: 1.0, label: '明确步骤和验收' }, { v: 0.5, label: '给大方向自规划' }, { v: 0.15, label: '完全自由探索' }
+        { v: 1.0, label: '告诉我具体步骤' }, { v: 0.5, label: '给我方向，我自己安排' }, { v: 0.15, label: '让我自由探索' }
       ];
 
-      body.appendChild(single('① 一次能高效专注多久？', blockOpts, a.block, function (v) { a.block = v; }));
-      body.appendChild(single('② 卡住时第一反应？', stuckOpts, a.stuck, function (v) { a.stuck = v; }));
-      body.appendChild(single('③ 思路最清醒的时段？', peakOpts, a.peakTime, function (v) { a.peakTime = v; }));
-
-      // 注意检查题
-      var q4 = el('div', 'quiz-question');
-      q4.appendChild(el('div', 'q-text', '④ 注意检查：请选择「比较同意」'));
-      var ol4 = el('div', 'opt-list');
-      function buildAtt() {
-        ol4.innerHTML = '';
-        attOpts.forEach(function (o) {
-          var item = el('div', 'opt' + (a.attention === o.v ? ' selected' : ''));
-          var inp = el('input'); inp.type = 'radio'; inp.name = 'attention'; inp.checked = (a.attention === o.v);
-          inp.onchange = function () {
-            a.attention = o.v; a.lowQuality = (o.v !== 'agree'); a.answered = true; buildAtt();
-          };
-          item.appendChild(inp); item.appendChild(el('span', '', o.label)); ol4.appendChild(item);
-        });
-      }
-      buildAtt();
-      q4.appendChild(ol4);
-      body.appendChild(q4);
-
-      body.appendChild(single('⑤ 新任务你希望？', structOpts, a.structureNeed, function (v) { a.structureNeed = v; }));
+      body.appendChild(single('block', '① 你一次大约能高效专注多久？', blockOpts, a.block, function (v) { a.block = v; }));
+      body.appendChild(single('stuck', '② 学不下去卡住时，你的第一反应是？', stuckOpts, a.stuck, function (v) { a.stuck = v; }));
+      body.appendChild(single('peak', '③ 你一天中脑子最清醒的时段？', peakOpts, a.peakTime, function (v) { a.peakTime = v; }));
+      body.appendChild(single('attention', '④ 注意力检查：本题请选「比较同意」', attOpts, a.attention, function (v) {
+        a.attention = v; a.lowQuality = (v !== 'agree');
+      }));
+      body.appendChild(single('structure', '⑤ 面对新任务，你更希望？', structOpts, a.structureNeed, function (v) { a.structureNeed = v; }));
     },
 
     // ===== 屏 4 社交与资源 =====
     _renderSocial: function (body) {
       body.appendChild(el('h2', 'quiz-screen-title', '社交与资源'));
+      body.appendChild(el('p', 'quiz-hint', '按你的真实情况选，点选项整行都可以。'));
       var a = state.answers.social;
 
-      function single(label, opts, current, setter) {
-        var q = el('div', 'quiz-question');
+      function syncAnswered() {
+        var q = a.answeredQ;
+        a.answered = q.open && q.socialPref && q.recovery && q.hours;
+      }
+
+      function single(qkey, label, opts, current, setter) {
+        var q = el('div', 'quiz-question'); q.dataset.qkey = qkey;
         q.appendChild(el('div', 'q-text', label));
         var ol = el('div', 'opt-list');
         opts.forEach(function (o) {
           var item = el('div', 'opt' + (current === o.v ? ' selected' : ''));
-          var inp = el('input'); inp.type = 'radio'; inp.name = label; inp.checked = (current === o.v);
-          inp.onchange = function () {
-            setter(o.v); a.answered = true;
-            // 局部更新样式
+          var inp = el('input'); inp.type = 'radio'; inp.name = 'social-' + qkey; inp.checked = (current === o.v);
+          item.appendChild(inp);
+          item.appendChild(el('span', '', o.label));
+          item.onclick = function () {
+            setter(o.v);
+            a.answeredQ[qkey] = true; syncAnswered();
             ol.querySelectorAll('.opt').forEach(function (x) { x.classList.remove('selected'); });
             item.classList.add('selected');
+            inp.checked = true;
+            q.classList.remove('missing');
           };
-          item.appendChild(inp); item.appendChild(el('span', '', o.label)); ol.appendChild(item);
+          ol.appendChild(item);
         });
         q.appendChild(ol);
         return q;
       }
 
-      var openOpts = [{ v: 1.0, label: '很焦虑必须做完' }, { v: 0.5, label: '有点惦记' }, { v: 0.1, label: '无所谓' }];
-      var socOpts = [{ v: 0.0, label: '完全独自' }, { v: 0.5, label: '偶尔交流' }, { v: 1.0, label: '必须有人一起' }];
-      var recOpts = [{ v: 0.3, label: '经常熬夜睡不够' }, { v: 0.65, label: '一般' }, { v: 1.0, label: '规律充足' }];
-      var hrsOpts = [{ v: 2, label: '<3 小时' }, { v: 5, label: '3-7 小时' }, { v: 10, label: '7-14 小时' }, { v: 18, label: '>14 小时' }];
+      var openOpts = [{ v: 1.0, label: '很焦虑，必须做完' }, { v: 0.5, label: '有点惦记' }, { v: 0.1, label: '不太在意' }];
+      var socOpts = [{ v: 0.0, label: '自己一个人学' }, { v: 0.5, label: '偶尔和人交流' }, { v: 1.0, label: '必须有人一起学' }];
+      var recOpts = [{ v: 0.3, label: '经常熬夜，睡不够' }, { v: 0.65, label: '一般' }, { v: 1.0, label: '规律充足' }];
+      var hrsOpts = [{ v: 2, label: '不到 3 小时' }, { v: 5, label: '3–7 小时' }, { v: 10, label: '7–14 小时' }, { v: 18, label: '14 小时以上' }];
 
-      body.appendChild(single('① 未完成的事悬着，你的感受？', openOpts, a.openLoop, function (v) { a.openLoop = v; }));
-      body.appendChild(single('② 你更喜欢怎么学？', socOpts, a.socialPref, function (v) { a.socialPref = v; }));
-      body.appendChild(single('③ 睡眠休息状况？', recOpts, a.recovery, function (v) { a.recovery = v; }));
-      body.appendChild(single('④ 每周可支配学习时间？', hrsOpts, a.weeklyHours, function (v) { a.weeklyHours = v; }));
+      body.appendChild(single('open', '① 有事情没做完悬着，你会？', openOpts, a.openLoop, function (v) { a.openLoop = v; }));
+      body.appendChild(single('socialPref', '② 你更喜欢怎么学？', socOpts, a.socialPref, function (v) { a.socialPref = v; }));
+      body.appendChild(single('recovery', '③ 你的睡眠休息状况？', recOpts, a.recovery, function (v) { a.recovery = v; }));
+      body.appendChild(single('hours', '④ 你每周大约能拿出多少时间学习？', hrsOpts, a.weeklyHours, function (v) { a.weeklyHours = v; }));
     },
 
     // ===== 屏 5 领域与经验兴趣 =====
     _renderDomains: function (body) {
       body.innerHTML = '';
-      body.appendChild(el('h2', 'quiz-screen-title', '领域与经验兴趣'));
-      body.appendChild(el('p', 'quiz-hint', '勾选你关注的方向（最多 3 个），勾选后对每一项评估经验和兴趣。'));
+      body.appendChild(el('h2', 'quiz-screen-title', '你感兴趣的方向'));
+      body.appendChild(el('p', 'quiz-hint', '选 1–3 个你想学或正在学的方向（点整行即可勾选），选完再告诉我你的经验和兴趣程度。'));
       var a = state.answers.domains;
+      var self = this;
 
       var grid = el('div', 'opt-list');
       DOMAIN_OPTIONS.forEach(function (d) {
         var checked = a.picks.indexOf(d.key) >= 0;
         var item = el('div', 'opt' + (checked ? ' selected' : ''));
         var inp = el('input'); inp.type = 'checkbox'; inp.checked = checked;
-        inp.onchange = function () {
-          if (inp.checked) {
-            if (a.picks.length >= 3) { inp.checked = false; return; }
-            a.picks.push(d.key);
-            if (!a.matrix[d.key]) { a.matrix[d.key] = { exp: 0.25, int: 0.5 }; }
-          } else {
-            a.picks = a.picks.filter(function (k) { return k !== d.key; });
-          }
-          a.answered = a.picks.length > 0;
-          this._renderDomains(body);
-        }.bind(this);
         item.appendChild(inp);
         item.appendChild(el('span', '', d.label));
+        item.onclick = function () {
+          var idx = a.picks.indexOf(d.key);
+          if (idx >= 0) {
+            a.picks.splice(idx, 1);
+          } else {
+            if (a.picks.length >= 3) {
+              var warn = $('.domain-warn', body);
+              if (!warn) {
+                warn = el('div', 'notice warn domain-warn', '最多选 3 个方向，先去掉了再选。');
+                body.insertBefore(warn, grid);
+              }
+              clearTimeout(self._domainWarnT);
+              self._domainWarnT = setTimeout(function () { if (warn.parentNode) warn.parentNode.removeChild(warn); }, 1800);
+              return;
+            }
+            a.picks.push(d.key);
+            if (!a.matrix[d.key]) { a.matrix[d.key] = { exp: 0.25, int: 0.5 }; }
+          }
+          a.answered = a.picks.length > 0;
+          self._renderDomains(body);
+        };
         grid.appendChild(item);
-      }, this);
+      });
       body.appendChild(grid);
 
       // 矩阵
@@ -472,57 +567,108 @@
     // ===== 屏 6 结果页 =====
     _renderResult: function (body) {
       var person = this._buildPerson();
-      var conf = global.LMS.engine.computeConfidence(person);
+      var conf = global.LMS.computeConfidence(person);
       person.confidence = conf;
-      // 回写到 store
+      // 回写到 store（同一用户只有一份画像，覆盖更新；写入时自动备份）
       global.LMS.store.setPerson(person);
 
-      body.appendChild(el('h2', 'quiz-screen-title', '你的学习画像已生成'));
-      body.appendChild(el('p', 'quiz-hint', '以下是基于你的作答生成的个人基线与画像。'));
-
-      var grid = el('div', 'result-grid');
-
-      // 基线卡
-      var card1 = el('div', 'card');
-      card1.appendChild(el('div', '', '基线负荷 T'));
-      var num = el('div', 'big-number', person.baseline.toFixed(0) + '<span class="unit">分</span>');
-      card1.appendChild(num);
-      card1.appendChild(el('div', '', '<span class="tag">校准 k=' + person.calibration.k + ' b=' + person.calibration.b + '</span>'));
-      grid.appendChild(card1);
-
-      // 置信度环
-      var card2 = el('div', 'card');
-      card2.appendChild(el('div', '', '画像置信度'));
-      var ringWrap = el('div', 'confidence-ring');
-      ringWrap.appendChild(this._confidenceRingSVG(conf));
-      var ringMeta = el('div', '');
-      ringMeta.innerHTML = '<div style="font-size:28px;font-weight:800;">' + Math.round(conf * 100) + '<span style="font-size:12px;color:var(--text-dim)">%</span></div>';
-      if (conf < 0.6) ringMeta.innerHTML += '<div class="notice warn">补答可提升精度</div>';
-      ringWrap.appendChild(ringMeta);
-      card2.appendChild(ringWrap);
-      grid.appendChild(card2);
-
-      // 通道雷达
-      var card3 = el('div', 'card');
-      card3.appendChild(el('div', '', '通道偏好'));
-      var radarWrap = el('div', 'radar-wrap');
-      radarWrap.appendChild(this._channelRadarSVG(person.channel));
-      card3.appendChild(radarWrap);
-      grid.appendChild(card3);
-
-      body.appendChild(grid);
+      this._renderProfile(body, person);
 
       // 按钮
       var self = this;
       var acts = el('div', 'row', '');
       acts.style.marginTop = '18px';
-      var viewLib = el('button', 'btn', '查看活动负荷');
+      var viewLib = el('button', 'btn', '看看为我推荐的计划');
       viewLib.onclick = function () { if (state.onComplete) state.onComplete(person); };
       acts.appendChild(viewLib);
-      var refine = el('button', 'btn secondary', '继续精细化画像（+90秒可选）');
+      var refine = el('button', 'btn secondary', '再答 4 题，让推荐更准（约 90 秒）');
       refine.onclick = function () { self._renderExtra(body); };
       acts.appendChild(refine);
       body.appendChild(acts);
+    },
+
+    // ===== 大白话画像卡（quiz 结果页与 #/result 共用） =====
+    _renderProfile: function (body, person) {
+      var conf = person.confidence != null ? person.confidence : global.LMS.computeConfidence(person);
+
+      body.appendChild(el('h2', 'quiz-screen-title', '你的学习画像'));
+      body.appendChild(el('p', 'quiz-hint', '用大白话总结你的学习特点。之后每次补答和完成反馈，都会让它更准。'));
+
+      var grid = el('div', 'result-grid');
+
+      // 1. 学习吃力指数
+      var b = Math.round(person.baseline);
+      var level = b < 40
+        ? { t: '轻松型', d: '同样的内容，你学起来比大多数人轻松，可以大胆加量。' }
+        : b <= 65
+          ? { t: '适中型', d: '难度适中的内容最适合你，太难的任务我们会帮你拆小。' }
+          : { t: '高敏型', d: '你比较容易累，我们会把任务切得更小、排得更松。' };
+      var card1 = el('div', 'card');
+      card1.appendChild(el('div', '', '学习吃力指数'));
+      card1.appendChild(el('div', 'big-number', b + '<span class="unit">分</span>'));
+      card1.appendChild(el('div', '', '<span class="tag">' + level.t + '</span>'));
+      card1.appendChild(el('p', 'quiz-hint', '0 分代表毫不费力，100 分代表非常吃力。' + level.d));
+      grid.appendChild(card1);
+
+      // 2. 画像准确度
+      var card2 = el('div', 'card');
+      card2.appendChild(el('div', '', '画像准确度'));
+      var ringWrap = el('div', 'confidence-ring');
+      ringWrap.appendChild(this._confidenceRingSVG(conf));
+      var ringMeta = el('div', '');
+      ringMeta.innerHTML = '<div style="font-size:28px;font-weight:800;">' + Math.round(conf * 100) + '<span style="font-size:12px;color:var(--text-dim)">%</span></div>';
+      ringWrap.appendChild(ringMeta);
+      card2.appendChild(ringWrap);
+      card2.appendChild(el('p', 'quiz-hint', '作答越完整、完成反馈越多，这个数就越高，推荐也越准。'));
+      grid.appendChild(card2);
+
+      // 3. 最适合你的学习方式
+      var topCh = 'hands', topV = -1;
+      Object.keys(person.channel || {}).forEach(function (k) {
+        if (person.channel[k] > topV) { topV = person.channel[k]; topCh = k; }
+      });
+      var card3 = el('div', 'card');
+      card3.appendChild(el('div', '', '最适合你的学习方式'));
+      card3.appendChild(el('div', '', '<b style="font-size:18px;color:var(--primary)">' + (CHANNEL_LABELS[topCh] || topCh) + '</b>'));
+      var radarWrap = el('div', 'radar-wrap');
+      radarWrap.appendChild(this._channelRadarSVG(person.channel));
+      card3.appendChild(radarWrap);
+      card3.appendChild(el('p', 'quiz-hint', '雷达图上越靠外的方式，对你越有效。'));
+      grid.appendChild(card3);
+
+      // 4. 你的学习节奏
+      var blockTxt = person.block <= 20 ? '20 分钟以内' : person.block <= 45 ? '20–45 分钟' : person.block <= 90 ? '45–90 分钟' : '90 分钟以上';
+      var hrsTxt = person.weeklyHours <= 2 ? '不到 3 小时' : person.weeklyHours <= 5 ? '3–7 小时' : person.weeklyHours <= 14 ? '7–14 小时' : '14 小时以上';
+      var recTxt = person.recovery >= 0.8 ? '规律充足' : person.recovery >= 0.5 ? '一般' : '经常熬夜，需要补觉';
+      var card4 = el('div', 'card');
+      card4.appendChild(el('div', '', '你的学习节奏'));
+      card4.appendChild(el('p', 'quiz-hint',
+        '· 一次大约能高效专注 <b>' + blockTxt + '</b><br>' +
+        '· 脑子最清醒的时段：<b>' + (TIME_LABELS[person.peakTime] || '早晨') + '</b><br>' +
+        '· 每周大约能投入 <b>' + hrsTxt + '</b><br>' +
+        '· 睡眠休息：<b>' + recTxt + '</b>'));
+      grid.appendChild(card4);
+
+      body.appendChild(grid);
+
+      // 5. 你关注的方向（整宽）
+      var dkeys = Object.keys(person.domains || {});
+      if (dkeys.length > 0) {
+        var card5 = el('div', 'card');
+        card5.style.marginTop = '14px';
+        card5.appendChild(el('div', '', '你关注的方向'));
+        var rows = dkeys.map(function (k) {
+          var dom = DOMAIN_OPTIONS.filter(function (d) { return d.key === k; })[0];
+          var dd = person.domains[k];
+          var expLabel = '看过介绍';
+          EXP_OPTIONS.forEach(function (o) { if (Math.abs(dd.experience - o.v) < 0.01) expLabel = o.label; });
+          var intScore = Math.round((dd.interest != null ? dd.interest : 0) * 4 + 1);
+          return '<div class="plan-item"><div class="pi-name">' + (dom ? dom.label : k) + '</div>' +
+            '<span class="tag">兴趣 ' + intScore + '/5</span> <span class="tag">经验：' + expLabel + '</span></div>';
+        }).join('');
+        card5.appendChild(el('div', '', rows));
+        body.appendChild(card5);
+      }
     },
 
     _renderExtra: function (body) {
@@ -560,7 +706,7 @@
           TL: w.TL + (a.evalAnxiety - 0.5) * 0.03,
           SL: w.SL - (a.slowTolerance - 0.5) * 0.03
         };
-        cfg.weights = global.LMS.engine.normalizeWeights(w2);
+        cfg.weights = global.LMS.normalizeWeights(w2);
         global.LMS.store.setConfig(cfg);
         state.screen = SCR_RESULT;
         self.render();
@@ -581,8 +727,13 @@
       } else {
         p.answered.baseline = false;
       }
-      // 校准初始 k=1, b=T-50
-      p.calibration = { k: 1, b: p.baseline - 50 };
+      // 校准：已有画像的校准与反馈历史保持一致，持续微调；首次则 k=1, b=T-50
+      var existing = global.LMS.store.getPerson();
+      if (existing && existing.calibration) {
+        p.calibration = existing.calibration;
+      } else {
+        p.calibration = { k: 1, b: p.baseline - 50 };
+      }
 
       // 通道
       var c = a.channel;
@@ -608,6 +759,7 @@
         p.structureNeed = pa.structureNeed;
         p.lowQuality = !!pa.lowQuality;
         p.answered.pace = true;
+        p.answered.structure = true;
       } else {
         p.answered.pace = false;
       }
@@ -634,6 +786,13 @@
         p.answered.domains = true;
       } else {
         p.answered.domains = false;
+      }
+
+      // stateIndex：保留已有画像的今日状态（首次用默认 0.6）
+      if (existing && existing.stateIndex != null) {
+        p.stateIndex = existing.stateIndex;
+      } else {
+        p.stateIndex = 0.6;
       }
 
       p.version = 1;

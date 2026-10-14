@@ -1,31 +1,134 @@
-/* 评分引擎 —— 纯函数，不读写 DOM / localStorage。挂在 window.LMS.engine */
-(function (global) {
+/* 评分引擎 —— UMD 风格，纯函数，浏览器和 Node 均可使用 */
+/* 6 正向分量(IL/EL/ML/TL/SL/PL) + 1 负向分量(UL) */
+(function (root) {
   'use strict';
 
-  var DEFAULT_WEIGHTS = { IL: 0.30, EL: 0.25, ML: 0.20, TL: 0.15, SL: 0.10 };
-  var DEFAULT_CONFIG = { weights: DEFAULT_WEIGHTS };
+  function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
 
+  /* ───────── 分区 ───────── */
   var ZONES = [
-    { max: 30, key: 'low', label: '低负荷', color: '#3FB950' },
-    { max: 55, key: 'comfort', label: '舒适区', color: '#58A6FF' },
-    { max: 75, key: 'optimal', label: '最佳学习区', color: '#D29922' },
-    { max: 90, key: 'high', label: '高负荷', color: '#F0883E' },
-    { max: 101, key: 'over', label: '过载', color: '#F85149' }
+    { max: 15,  key: 'under',   label: '挑战不足',   color: '#39C5BB' },
+    { max: 35,  key: 'low',     label: '低负荷',     color: '#3FB950' },
+    { max: 58,  key: 'comfort', label: '舒适区',     color: '#58A6FF' },
+    { max: 76,  key: 'optimal', label: '最佳学习区', color: '#D29922' },
+    { max: 90,  key: 'high',    label: '高负荷',     color: '#F0883E' },
+    { max: 101, key: 'over',    label: '过载',       color: '#F85149' }
   ];
 
   function zoneOf(score) {
-    score = Math.max(0, Math.min(100, score));
+    score = clamp(score, 0, 100);
     for (var i = 0; i < ZONES.length; i++) {
-      if (score < ZONES[i].max) { return ZONES[i]; }
+      if (score < ZONES[i].max) return ZONES[i];
     }
     return ZONES[ZONES.length - 1];
   }
 
-  // 个体置信度计算：权重来自 config（维度名对齐 answered）
+  /* 匹配度：66 分为理想点 */
+  function matchOf(score) {
+    return clamp(100 - Math.abs(score - 66) * 1.8, 0, 100);
+  }
+
+  /* ───────── 核心评分 ───────── */
+  var W = { IL: 0.26, EL: 0.20, ML: 0.18, TL: 0.14, SL: 0.12, PL: 0.10 };
+
+  function scoreActivity(person, activity) {
+    person = person || {};
+    activity = activity || {};
+    var dom = (person.domains && person.domains[activity.domain]) || {};
+    var E = dom.experience != null ? dom.experience : 0.3;
+    var I = dom.interest != null ? dom.interest : 0.3;
+
+    var D1 = activity.D1 != null ? activity.D1 : 0.5;
+    var D2 = activity.D2 != null ? activity.D2 : 0.5;
+    var D4 = activity.D4 != null ? activity.D4 : 0.5;
+    var D5 = activity.D5 != null ? activity.D5 : 0.5;
+    var D6 = activity.D6 != null ? activity.D6 : 0.1;
+    var D7 = activity.D7 != null ? activity.D7 : 0.5;
+
+    /* IL —— 内在认知负荷 */
+    var IL = D1 * (0.7 + 0.3 * D2) * Math.max(0.15, 1 - 0.6 * E);
+
+    /* EL —— 外在环境负荷（通道不匹配 + 社交偏好差） */
+    var ch = person.channel || { read: 0.25, audiovisual: 0.25, hands: 0.25, social: 0.25 };
+    var ach = activity.channel || { read: 0.25, audiovisual: 0.25, hands: 0.25, social: 0.25 };
+    var dot = 0;
+    ['read', 'audiovisual', 'hands', 'social'].forEach(function (k) {
+      dot += (ch[k] || 0) * (ach[k] || 0);
+    });
+    var mismatch = (1 - dot) / 0.75;
+    var socialPref = person.socialPref != null ? person.socialPref : 0.1;
+    var EL = 0.7 * mismatch + 0.3 * Math.abs(D6 - socialPref);
+
+    /* ML —— 动机负荷 */
+    var ML = Math.pow(1 - I, 1.5);
+
+    /* TL —— 时间负荷 */
+    var peakTime = person.peakTime || 'morning';
+    var chrono = (activity.bestTime && activity.bestTime.indexOf(peakTime) >= 0) ? 1 : 0.5;
+    var block = person.block || 45;
+    var focusNeedMin = activity.focusNeedMin || 30;
+    var ratio = clamp(focusNeedMin / block, 0.5, 2);
+    var TL = Math.min(1, (ratio / 2) * (1.5 - 0.5 * chrono));
+
+    /* SL —— 切换负荷（structureNeed 仅在此出现一次） */
+    var structureNeed = person.structureNeed != null ? person.structureNeed : 0.5;
+    var stuck = person.stuck || 'search';
+    var stuckPenalty;
+    if (stuck === 'ask') {
+      stuckPenalty = D6 < 0.3 ? 1.0 : 0.3;
+    } else if (stuck === 'switch') {
+      stuckPenalty = 0.6;
+    } else {
+      stuckPenalty = 0.2; /* search */
+    }
+    var SL = 0.50 * (1 - structureNeed) + 0.30 * (1 - D7) + 0.20 * stuckPenalty;
+
+    /* PL —— 产出压力负荷 */
+    var openLoop = person.openLoop != null ? person.openLoop : 0.5;
+    var PL = openLoop * (1 - D5);
+
+    /* UL —— 负向分量：挑战不足（从总分中扣减） */
+    var UL = D1 * Math.max(0, E - D2 - 0.15) * 0.8;
+
+    /* 加权原始分 */
+    var rawBase = W.IL * IL + W.EL * EL + W.ML * ML + W.TL * TL + W.SL * SL + W.PL * PL;
+    var raw = clamp(100 * rawBase - 100 * 0.45 * UL, 0, 100);
+
+    /* 校准 */
+    var cal = person.calibration || { k: 1, b: 0 };
+    var score = clamp(cal.k * raw + cal.b, 0, 100);
+
+    /* 状态修正：今天的实际负荷 */
+    var stateIndex = person.stateIndex != null ? person.stateIndex : 0.6;
+    var stateAdj = clamp(score * (1 + (0.5 - stateIndex) * 0.3), 0, 100);
+
+    return {
+      score: Math.round(score),
+      raw: Math.round(raw * 100) / 100,
+      stateAdj: Math.round(stateAdj),
+      parts: {
+        IL: Math.round(IL * 10000) / 10000,
+        EL: Math.round(EL * 10000) / 10000,
+        ML: Math.round(ML * 10000) / 10000,
+        TL: Math.round(TL * 10000) / 10000,
+        SL: Math.round(SL * 10000) / 10000,
+        PL: Math.round(PL * 10000) / 10000,
+        UL: Math.round(UL * 10000) / 10000
+      },
+      mismatch: Math.round(mismatch * 10000) / 10000,
+      confidence: computeConfidence(person),
+      zone: zoneOf(score),
+      match: Math.round(matchOf(score)),
+      recovery: person.recovery != null ? person.recovery : 0.7,
+      weeklyHours: person.weeklyHours || 8
+    };
+  }
+
+  /* ───────── 置信度 ───────── */
   var DIM_WEIGHTS = { baseline: 0.20, channel: 0.20, pace: 0.15, structure: 0.10, social: 0.20, domains: 0.15 };
 
   function computeConfidence(person) {
-    if (!person) { return 0.3; }
+    if (!person) return 0.3;
     var answered = person.answered || {};
     var sum = 0, wsum = 0;
     Object.keys(DIM_WEIGHTS).forEach(function (k) {
@@ -37,124 +140,61 @@
     return Math.round(conf * 100) / 100;
   }
 
-  function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+  /* ───────── 主要负荷来源 ───────── */
+  var PART_LABELS = {
+    IL: '认知门槛',
+    EL: '通道不匹配',
+    ML: '兴趣偏低',
+    TL: '时间不匹配',
+    SL: '切换成本',
+    PL: '产出压力'
+  };
 
-  function scoreActivity(person, activity, config) {
-    config = config || DEFAULT_CONFIG;
-    var weights = config.weights || DEFAULT_WEIGHTS;
-
-    var dom = (person && person.domains && person.domains[activity.domain]) || {};
-    var E = dom.experience != null ? dom.experience : 0.3;
-    var I = dom.interest != null ? dom.interest : 0.3;
-
-    // 内在负荷 IL
-    var IL = activity.D1 * Math.max(0.15, 1 - 0.6 * E);
-
-    // 通道匹配
-    var ch = person && person.channel || { read: 0.25, audiovisual: 0.25, hands: 0.25, social: 0.25 };
-    var ach = activity.channel || {};
-    var dot = 0;
-    ['read', 'audiovisual', 'hands', 'social'].forEach(function (k) {
-      dot += (ch[k] || 0) * (ach[k] || 0);
-    });
-    var mismatch = (1 - dot) / 0.75; // 归一化到 0~1
-
-    // 外在负荷 EL
-    var EL = 0.45 * mismatch
-           + 0.30 * (activity.D4 * (1 - (person && person.structureNeed != null ? person.structureNeed : 0.5)))
-           + 0.25 * Math.abs(activity.D6 - (person && person.socialPref != null ? person.socialPref : 0.3));
-
-    // 动机负荷 ML
-    var ML = Math.pow(1 - I, 1.5);
-
-    // 时间负荷 TL
-    var peakTime = person && person.peakTime || 'morning';
-    var chrono = (activity.bestTime && activity.bestTime.indexOf(peakTime) >= 0) ? 1 : 0.5;
-    var block = person && person.block || 45;
-    var ratio = clamp(activity.focusNeedMin / block, 0.5, 2);
-    var TL = Math.min(1, (ratio / 2) * (1.5 - 0.5 * chrono));
-
-    // 切换负荷 SL
-    var structureNeed = person && person.structureNeed != null ? person.structureNeed : 0.5;
-    var SL = 0.6 * (1 - structureNeed) + 0.4 * (1 - activity.D7);
-
-    // 加权原始分
-    var Raw = 100 * (weights.IL * IL + weights.EL * EL + weights.ML * ML + weights.TL * TL + weights.SL * SL);
-    Raw = clamp(Raw, 0, 100);
-
-    // 校准
-    var cal = (person && person.calibration) || { k: 1, b: 0 };
-    var score = clamp(cal.k * Raw + cal.b, 0, 100);
-
-    return {
-      score: Math.round(score * 10) / 10,
-      raw: Math.round(Raw * 10) / 10,
-      parts: {
-        IL: Math.round(IL * 1000) / 1000,
-        EL: Math.round(EL * 1000) / 1000,
-        ML: Math.round(ML * 1000) / 1000,
-        TL: Math.round(TL * 1000) / 1000,
-        SL: Math.round(SL * 1000) / 1000
-      },
-      mismatch: Math.round(mismatch * 1000) / 1000,
-      confidence: 0.8,
-      zone: zoneOf(score)
-    };
-  }
-
-  // 主要负荷来源：返回 parts 中权重后贡献最大的标签
-  var PART_LABELS = { IL: '内在认知', EL: '外在环境', ML: '动机兴趣', TL: '时间块', SL: '切换成本' };
-
-  function topContributor(parts, weights) {
-    weights = weights || DEFAULT_WEIGHTS;
+  function topContributor(parts) {
     var best = 'IL', bestV = -1;
-    Object.keys(parts).forEach(function (k) {
-      var w = weights[k] || 0;
-      var v = parts[k] * w;
+    Object.keys(PART_LABELS).forEach(function (k) {
+      var v = (parts[k] || 0) * W[k];
       if (v > bestV) { bestV = v; best = k; }
     });
-    // 中文化标签
-    var label = PART_LABELS[best];
-    if (best === 'EL') label = '通道/环境不匹配';
-    else if (best === 'IL') label = '认知门槛较高';
-    else if (best === 'ML') label = '兴趣偏低';
-    else if (best === 'TL') label = '时间块不匹配';
-    else if (best === 'SL') label = '切换成本';
-    return label;
+    return PART_LABELS[best];
   }
 
-  // 处方规则（按序匹配，可多条）
-  function prescriptions(person, activity, scored, config) {
-    config = config || DEFAULT_CONFIG;
-    var weights = config.weights || DEFAULT_WEIGHTS;
-    var I = (person && person.domains && person.domains[activity.domain] && person.domains[activity.domain].interest != null)
-      ? person.domains[activity.domain].interest : 0.3;
+  /* ───────── 处方规则（按序匹配，可多条） ───────── */
+  function prescriptions(person, activity, scored) {
+    var dom = (person && person.domains && person.domains[activity.domain]) || {};
+    var I = dom.interest != null ? dom.interest : 0.3;
     var score = scored.score;
     var mismatch = scored.mismatch;
     var TL = scored.parts.TL;
+    var UL = scored.parts.UL || 0;
+    var zone = scored.zone.key;
+
+    /* 通道第一名 */
     var ch = person && person.channel || {};
-    var topChannel = 'hands';
-    var topV = -1;
-    Object.keys(ch).forEach(function (k) { if (ch[k] > topV) { topV = ch[k]; topChannel = k; } });
-    var channelName = { read: '读图文', audiovisual: '看视频听讲解', hands: '自己上手试错', social: '和人讨论请教' }[topChannel] || '自己上手试错';
+    var topCh = 'hands', topV = -1;
+    Object.keys(ch).forEach(function (k) { if (ch[k] > topV) { topV = ch[k]; topCh = k; } });
+    var chName = { read: '读图文教程', audiovisual: '看视频听讲解', hands: '自己上手试错', social: '和人讨论请教' }[topCh] || '自己上手试错';
 
     var out = [];
-    if (score > 75 && I > 0.7) {
-      out.push({ title: '心流陷阱', text: '这件事你很感兴趣但负荷偏高，建议拆成≤45分钟小块分两天做。' });
+    if (score > 76 && I > 0.7) {
+      out.push({ title: '心流陷阱', text: '这件事你很感兴趣但负荷偏高，建议拆成 ≤45 分钟小块分两天做。' });
     }
-    if (score > 75 && mismatch > 0.5) {
-      out.push({ title: '通道不匹配', text: '换成你更偏好的形式，例如「' + channelName + '」。' });
+    if (score > 76 && mismatch > 0.5) {
+      out.push({ title: '通道不匹配', text: '换成你更偏好的形式，例如「' + chName + '」。' });
     }
-    if (score > 75 && TL > 0.6) {
+    if (score > 76 && TL > 0.6) {
       out.push({ title: '时间不匹配', text: '挪到该活动的最佳时段，或延长单次时间块以降低切换成本。' });
     }
-    if (I < 0.4) {
-      out.push({ title: '兴趣偏低', text: '缩短到 15 分钟、让反馈更即时，或与喜欢的活动绑定（做完它才做喜欢的）。' });
+    if (UL > 0.1 || zone === 'under') {
+      out.push({ title: '挑战不足', text: '这个活动对你太简单了，建议加难度、缩短时间、或换成更进阶的版本 —— 无聊比疲劳更容易让人放弃。' });
     }
-    if (score < 30) {
+    if (I < 0.4) {
+      out.push({ title: '兴趣偏低', text: '缩短到 15 分钟、提高反馈即时性，或与喜欢的活动绑定（做完它才做喜欢的）。' });
+    }
+    if (score < 35) {
       out.push({ title: '负荷很轻', text: '可与其他活动叠加或适当加量。' });
     }
-    if (score >= 55 && score < 75) {
+    if (zone === 'optimal') {
       out.push({ title: '处在最佳学习区', text: '保持当前安排，这是高效学习的甜区。' });
     }
     if (out.length === 0) {
@@ -163,7 +203,7 @@
     return out;
   }
 
-  // 容量与周负荷
+  /* ───────── 周负荷 ───────── */
   function weeklyCapacity(person) {
     var p = person || {};
     var weeklyHours = p.weeklyHours || 8;
@@ -171,61 +211,113 @@
     return weeklyHours * 50 * (0.7 + 0.6 * recovery);
   }
 
-  function weeklyLoadPercent(person, plan, scoredByActivity, config) {
+  /* 同一天内高负荷惩罚：第2个>70 ×1.15，第3个+ ×1.30 */
+  function dailyPenalty(list, idx) {
+    if (idx === 0) return 1;
+    var priorHigh = 0;
+    for (var i = 0; i < idx && i < list.length; i++) {
+      if (list[i].score > 70) priorHigh++;
+    }
+    return priorHigh === 0 ? 1 : priorHigh === 1 ? 1.15 : 1.30;
+  }
+
+  function weeklyLoadPercent(person, plan, scoredByActivity) {
     var cap = weeklyCapacity(person);
-    if (cap <= 0) { return { percent: 0, capacity: 0, zone: zoneOf(0) }; }
+    if (cap <= 0) return { percent: 0, capacity: 0, zone: zoneOf(0) };
+    /* 按星期分组 */
+    var byDay = {};
     var sum = 0;
     (plan || []).forEach(function (item) {
       var sc = scoredByActivity[item.activityId];
-      if (sc) { sum += sc.score * (item.hours || 0); }
+      if (!sc) return;
+      var wd = item.weekday != null ? item.weekday : -1; /* -1 = 不限日期 */
+      if (wd >= 0) {
+        if (!byDay[wd]) byDay[wd] = [];
+        byDay[wd].push({ score: sc.score, hours: item.hours || 0 });
+      } else {
+        sum += sc.score * (item.hours || 0); /* 不限日期不加惩罚 */
+      }
+    });
+    /* 同天惩罚 */
+    Object.keys(byDay).forEach(function (day) {
+      var list = byDay[day];
+      list.forEach(function (item, i) {
+        var pen = dailyPenalty(list, i);
+        sum += item.score * pen * item.hours;
+      });
     });
     var pct = sum / cap * 100;
     var z;
-    if (pct < 70) { z = { key: 'low', label: '有余量可加量', color: '#3FB950' }; }
-    else if (pct <= 100) { z = { key: 'comfort', label: '正常', color: '#58A6FF' }; }
-    else if (pct <= 110) { z = { key: 'optimal', label: '提示降载', color: '#D29922' }; }
-    else { z = { key: 'over', label: '强提示恢复', color: '#F85149' }; }
+    if (pct < 70) z = { key: 'low', label: '有余量可加量', color: '#3FB950' };
+    else if (pct <= 100) z = { key: 'comfort', label: '正常', color: '#58A6FF' };
+    else if (pct <= 110) z = { key: 'optimal', label: '提示降载', color: '#D29922' };
+    else z = { key: 'over', label: '强提示恢复', color: '#F85149' };
     return { percent: Math.round(pct * 10) / 10, capacity: Math.round(cap), zone: z };
   }
 
-  // LMS 校准更新（纯函数，返回新 calibration）
-  function updateCalibration(calibration, raw, observed, alpha) {
-    alpha = alpha == null ? 0.15 : alpha;
+  /* ───────── 校准 ───────── */
+  function median(arr) {
+    if (!arr || arr.length === 0) return 0;
+    var sorted = arr.slice().sort(function (a, b) { return a - b; });
+    var mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  }
+
+  function updateCalibration(calibration, raw, observed, logs, lowQuality) {
+    if (lowQuality) return { k: calibration.k, b: calibration.b };
     var k = calibration.k != null ? calibration.k : 1;
     var b = calibration.b != null ? calibration.b : 0;
-    var P = k * raw + b;
-    var e = observed - P;
-    k += alpha * e * raw / (raw * raw + 100);
-    b += alpha * e * 100 / (raw * raw + 100);
-    k = clamp(k, 0.5, 1.6);
-    b = clamp(b, -40, 40);
+    var predicted = k * raw + b;
+    var e = observed - predicted;
+
+    /* k: 仅大误差时更新（抗噪） */
+    if (Math.abs(e) > 8) {
+      k = clamp(k + 0.12 * e * raw / (raw * raw + 100), 0.5, 1.6);
+    }
+    /* b: 最近 10 次误差中位数 */
+    var recent = (logs || []).slice(-10).map(function (x) { return x.e; });
+    b = clamp(median(recent), -35, 35);
+
     return { k: Math.round(k * 10000) / 10000, b: Math.round(b * 10000) / 10000 };
   }
 
-  // 权重归一化
+  /* stateIndex EMA 更新（α=0.3） */
+  function updateStateIndex(oldVal, input) {
+    var alpha = 0.3;
+    var newVal = alpha * input + (1 - alpha) * (oldVal != null ? oldVal : 0.6);
+    return Math.round(newVal * 100) / 100;
+  }
+
+  /* ───────── 权重归一化 ───────── */
   function normalizeWeights(weights) {
     var sum = 0;
     Object.keys(weights).forEach(function (k) { sum += weights[k]; });
-    if (sum <= 0) { return DEFAULT_WEIGHTS; }
+    if (sum <= 0) return Object.assign({}, W);
     var out = {};
-    Object.keys(weights).forEach(function (k) { out[k] = Math.round((weights[k] / sum) * 1000) / 1000; });
+    Object.keys(weights).forEach(function (k) {
+      out[k] = Math.round((weights[k] / sum) * 1000) / 1000;
+    });
     return out;
   }
 
-  global.LMS = global.LMS || {};
-  global.LMS.engine = {
-    DEFAULT_WEIGHTS: DEFAULT_WEIGHTS,
-    DEFAULT_CONFIG: DEFAULT_CONFIG,
-    ZONES: ZONES,
-    zoneOf: zoneOf,
-    computeConfidence: computeConfidence,
+  /* ───────── 导出 ───────── */
+  var API = {
     scoreActivity: scoreActivity,
+    zoneOf: zoneOf,
+    matchOf: matchOf,
+    computeConfidence: computeConfidence,
     topContributor: topContributor,
     prescriptions: prescriptions,
     weeklyCapacity: weeklyCapacity,
     weeklyLoadPercent: weeklyLoadPercent,
+    dailyPenalty: dailyPenalty,
     updateCalibration: updateCalibration,
+    updateStateIndex: updateStateIndex,
     normalizeWeights: normalizeWeights,
-    DIM_WEIGHTS: DIM_WEIGHTS
+    ZONES: ZONES,
+    WEIGHTS: W
   };
-})(window);
+
+  if (typeof module !== 'undefined' && module.exports) module.exports = API;
+  else root.LMS = Object.assign(root.LMS || {}, API);
+})(typeof window !== 'undefined' ? window : globalThis);

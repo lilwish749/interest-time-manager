@@ -1,4 +1,5 @@
 /* 存储层 —— 统一 localStorage 读写，挂在 window.LMS.store */
+/* 单用户唯一画像：覆盖更新，不保留历史多画像 */
 (function (global) {
   'use strict';
 
@@ -23,36 +24,46 @@
     catch (e) { return false; }
   }
 
-  // 群体默认值（用于跳过题）
+  // 群体默认画像（用于跳过题 / 未填问卷时的通用估算）
   function defaultPerson() {
     return {
       version: 1,
-      baseline: 50,
+      baseline: 58,
       channel: { read: 0.25, audiovisual: 0.25, hands: 0.25, social: 0.25 },
-      block: 45,
+      block: 60,
       stuck: 'search',
-      peakTime: 'morning',
-      structureNeed: 0.5,
+      peakTime: 'night',
+      structureNeed: 0.3,
       openLoop: 0.5,
-      socialPref: 0.3,
-      recovery: 0.65,
-      weeklyHours: 5,
+      socialPref: 0.1,
+      recovery: 0.7,
+      weeklyHours: 8,
+      stateIndex: 0.6,
       domains: {},
-      calibration: { k: 1, b: 0 },
-      confidence: 0.3,
-      answered: { baseline: false, channel: false, pace: false, structure: false, social: false, domains: false }
+      calibration: { k: 1.0, b: 8 },
+      confidence: 0.82,
+      answered: { baseline: true, channel: true, pace: true, structure: true, social: true, domains: true }
     };
   }
 
+  // 默认配置：6 分量权重 + 反馈开关 + 每周提醒
   function defaultConfig() {
-    return { weights: { IL: 0.30, EL: 0.25, ML: 0.20, TL: 0.15, SL: 0.10 } };
+    return {
+      weights: { IL: 0.26, EL: 0.20, ML: 0.18, TL: 0.14, SL: 0.12, PL: 0.10 },
+      feedbackEnabled: false,
+      weeklyReminder: 3
+    };
   }
 
   var store = {
     KEYS: KEYS,
 
     getPerson: function () { return read(KEYS.PERSON, null); },
-    setPerson: function (p) { return write(KEYS.PERSON, p); },
+    setPerson: function (p) {
+      var ok = write(KEYS.PERSON, p);
+      if (ok) { this.autoBackup(p); } // 写入画像时自动备份
+      return ok;
+    },
     hasPerson: function () { return read(KEYS.PERSON, null) != null; },
 
     getLogs: function () { return read(KEYS.LOGS, []); },
@@ -66,13 +77,18 @@
 
     getPlan: function () { return read(KEYS.PLAN, []); },
     setPlan: function (plan) { return write(KEYS.PLAN, plan); },
-    addToPlan: function (activityId, hours) {
+    // 加入计划：activityId + hours + weekday（-1 = 不限日期）
+    addToPlan: function (activityId, hours, weekday) {
       var plan = read(KEYS.PLAN, []);
       var found = false;
       for (var i = 0; i < plan.length; i++) {
-        if (plan[i].activityId === activityId) { plan[i].hours = hours; found = true; break; }
+        if (plan[i].activityId === activityId) {
+          plan[i].hours = hours;
+          plan[i].weekday = (weekday != null ? weekday : -1);
+          found = true; break;
+        }
       }
-      if (!found) { plan.push({ activityId: activityId, hours: hours }); }
+      if (!found) { plan.push({ activityId: activityId, hours: hours, weekday: (weekday != null ? weekday : -1) }); }
       write(KEYS.PLAN, plan);
       return plan;
     },
@@ -109,6 +125,27 @@
       if (data.plan) { write(KEYS.PLAN, data.plan); }
       if (data.config) { write(KEYS.CONFIG, data.config); }
       return true;
+    },
+
+    // 自动备份：保存画像时下载 person-backup-YYYYMMDD.json
+    // 仅当距上次备份超过 6 小时才下载，避免频繁弹下载框
+    autoBackup: function (person) {
+      try {
+        var last = read('lms.lastBackup', 0);
+        var now = Date.now();
+        if (now - last < 6 * 3600 * 1000) return; // 6 小时内已备份过
+        write('lms.lastBackup', now);
+        var d = new Date();
+        var stamp = d.getFullYear() +
+          String(d.getMonth() + 1).padStart(2, '0') +
+          String(d.getDate()).padStart(2, '0');
+        var blob = new Blob([JSON.stringify(person, null, 2)], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = 'person-backup-' + stamp + '.json';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      } catch (e) { /* 备份失败不影响主流程 */ }
     }
   };
 

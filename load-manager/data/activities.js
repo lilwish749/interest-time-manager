@@ -1,5 +1,5 @@
-/* 活动库与演示画像 —— 纯数据常量，挂在 window.LMS_DATA 下 */
-(function (global) {
+/* 活动库与演示画像 —— UMD 风格，浏览器和 Node 均可使用 */
+(function (root) {
   'use strict';
 
   var ACTIVITIES = [
@@ -53,34 +53,33 @@
       bestTime: ['night'] }
   ];
 
-  // 演示画像 A / B
-  var DEMO_PROFILE_A = {
-    version: 1, baseline: 35,
-    channel: { read: 0.15, audiovisual: 0.15, hands: 0.65, social: 0.05 },
-    block: 65, stuck: 'search', peakTime: 'night', structureNeed: 0.25,
-    openLoop: 0.3, socialPref: 0.1, recovery: 0.85, weeklyHours: 10,
-    domains: {
-      coding: { experience: 0.75, interest: 1.0 },
-      design: { experience: 0.5, interest: 0.75 }
+  /* 三个演示画像 —— 规格第七节提供，禁止修改 */
+  var DEMO_PROFILES = {
+    A: {
+      baseline: 35, channel: { read: 0.15, audiovisual: 0.15, hands: 0.65, social: 0.05 }, block: 65,
+      stuck: 'search', peakTime: 'night', structureNeed: 0.25, openLoop: 0.3, socialPref: 0.1,
+      recovery: 0.85, weeklyHours: 10,
+      domains: { coding: { experience: 0.75, interest: 1.0 }, design: { experience: 0.5, interest: 0.75 } },
+      calibration: { k: 1, b: -15 }
     },
-    calibration: { k: 1, b: -15 },
-    confidence: 0.9,
-    answered: { baseline: true, channel: true, pace: true, structure: true, social: true, domains: true }
+    B: {
+      baseline: 72, channel: { read: 0.5, audiovisual: 0.35, hands: 0.1, social: 0.05 }, block: 15,
+      stuck: 'ask', peakTime: 'morning', structureNeed: 0.9, openLoop: 1.0, socialPref: 0.5,
+      recovery: 0.3, weeklyHours: 4,
+      domains: { coding: { experience: 0.25, interest: 0.25 }, design: { experience: 0.1, interest: 0.2 } },
+      calibration: { k: 1, b: 22 }
+    },
+    C: {
+      baseline: 30, channel: { read: 0.5, audiovisual: 0.3, hands: 0.15, social: 0.05 }, block: 15,
+      stuck: 'search', peakTime: 'night', structureNeed: 0.9, openLoop: 0.5, socialPref: 0.0,
+      recovery: 0.8, weeklyHours: 8,
+      domains: { language: { experience: 0.95, interest: 0.3 } },
+      calibration: { k: 1, b: -25 }
+    }
   };
 
-  var DEMO_PROFILE_B = {
-    version: 1, baseline: 72,
-    channel: { read: 0.5, audiovisual: 0.35, hands: 0.1, social: 0.05 },
-    block: 15, stuck: 'ask', peakTime: 'morning', structureNeed: 0.9,
-    openLoop: 1.0, socialPref: 0.5, recovery: 0.3, weeklyHours: 4,
-    domains: {
-      coding: { experience: 0.25, interest: 0.25 },
-      design: { experience: 0.1, interest: 0.2 }
-    },
-    calibration: { k: 1, b: 22 },
-    confidence: 0.9,
-    answered: { baseline: true, channel: true, pace: true, structure: true, social: true, domains: true }
-  };
+  var LMS_DATA = { ACTIVITIES: ACTIVITIES, DEMO_PROFILES: DEMO_PROFILES };
 
-  global.LMS_DATA = { ACTIVITIES: ACTIVITIES, DEMO_PROFILE_A: DEMO_PROFILE_A, DEMO_PROFILE_B: DEMO_PROFILE_B };
-})(window);
+  if (typeof module !== 'undefined' && module.exports) module.exports = LMS_DATA;
+  else root.LMS_DATA = LMS_DATA;
+})(typeof window !== 'undefined' ? window : globalThis);

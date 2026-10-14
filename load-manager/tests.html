@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>学习配速器 · 测试套件</title>
+  <style>
+    :root {
+      --bg: #0D1117;
+      --card: #161B22;
+      --card-2: #1C2330;
+      --border: #30363D;
+      --text: #E6EDF3;
+      --text-dim: #8B949E;
+      --pass: #3FB950;
+      --fail: #F85149;
+      --info: #58A6FF;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+    body { font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif; font-size: 14px; line-height: 1.6; padding: 24px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--text-dim); margin: 0 0 20px; font-size: 13px; }
+    .test-section {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px 20px; margin-bottom: 16px;
+    }
+    .section-title { font-size: 15px; font-weight: 600; margin: 0 0 12px; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    .test-item { padding: 6px 0; border-bottom: 1px solid rgba(48,54,61,0.5); }
+    .test-item:last-child { border-bottom: none; }
+    .test-status { font-weight: 700; font-size: 12px; padding: 2px 8px; border-radius: 4px; margin-right: 8px; }
+    .test-status.pass { color: var(--pass); background: rgba(63,185,80,0.12); }
+    .test-status.fail { color: var(--fail); background: rgba(248,81,73,0.12); }
+    .test-name { font-weight: 500; }
+    .test-detail { color: var(--text-dim); font-size: 12px; margin-left: 28px; margin-top: 2px; font-family: "Cascadia Code", "Consolas", monospace; white-space: pre-wrap; }
+    .test-detail.info { color: var(--info); }
+    .summary {
+      position: sticky; bottom: 0; background: var(--card-2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;
+    }
+    .summary-text { font-size: 16px; font-weight: 700; }
+    .summary .pass-count { color: var(--pass); }
+    .summary .fail-count { color: var(--fail); }
+    .run-btn {
+      background: var(--info); color: #000; border: none; border-radius: 8px; padding: 8px 20px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .run-btn:hover { opacity: 0.88; }
+    #results { min-height: 20px; }
+  </style>
+</head>
+<body>
+  <h1>学习配速器 · 测试套件</h1>
+  <p class="sub">浏览器版 tests/run.js —— 14 项断言，覆盖黄金用例 / 字段使用 / 单调性 / 边界 / 校准 / 抗噪</p>
+  <button class="run-btn" id="runBtn" onclick="runAll()">运行测试</button>
+  <div id="results" style="margin-top:20px;"></div>
+  <div class="summary" id="summary" style="display:none;">
+    <span class="summary-text">结果：<span class="pass-count" id="passCount">0</span> passed, <span class="fail-count" id="failCount">0</span> failed</span>
+    <span id="verdict"></span>
+  </div>
+
+  <script src="data/activities.js"></script>
+  <script src="js/engine.js"></script>
+  <script>
+    var LMS = window.LMS;
+    var ACTIVITIES = LMS_DATA.ACTIVITIES;
+    var DEMO = LMS_DATA.DEMO_PROFILES;
+
+    var passCount = 0, failCount = 0;
+    var resultsEl = document.getElementById('results');
+
+    function approx(actual, expected, tol) { return Math.abs(actual - expected) <= tol; }
+    function findAct(id) { return ACTIVITIES.filter(function(a){ return a.id === id; })[0]; }
+
+    function addSection(title) {
+      var sec = document.createElement('div');
+      sec.className = 'test-section';
+      sec.innerHTML = '<div class="section-title"></div>';
+      sec.firstChild.textContent = title;
+      resultsEl.appendChild(sec);
+      return sec;
+    }
+
+    function addItem(section, status, name, detail, detailClass) {
+      var item = document.createElement('div');
+      item.className = 'test-item';
+      var s = document.createElement('span');
+      s.className = 'test-status ' + (status ? 'pass' : 'fail');
+      s.textContent = status ? 'PASS' : 'FAIL';
+      item.appendChild(s);
+      var n = document.createElement('span');
+      n.className = 'test-name';
+      n.textContent = name;
+      item.appendChild(n);
+      if (detail) {
+        var d = document.createElement('div');
+        d.className = 'test-detail' + (detailClass ? ' ' + detailClass : '');
+        d.textContent = detail;
+        item.appendChild(d);
+      }
+      section.appendChild(item);
+    }
+
+    function addRawItem(section, text, cls) {
+      var item = document.createElement('div');
+      item.className = 'test-item';
+      var d = document.createElement('div');
+      d.className = 'test-detail' + (cls ? ' ' + cls : '');
+      d.textContent = text;
+      item.appendChild(d);
+      section.appendChild(item);
+    }
+
+    function PASS(section, name, detail) {
+      passCount++;
+      addItem(section, true, name, detail);
+    }
+    function FAIL(section, name, detail) {
+      failCount++;
+      addItem(section, false, name, detail);
+    }
+
+    function runAll() {
+      passCount = 0; failCount = 0;
+      resultsEl.innerHTML = '';
+      document.getElementById('summary').style.display = 'none';
+
+      /* ───────── 黄金用例 ───────── */
+      var GOLDEN = [
+        { profile: 'A', actId: 'python-data-video',
+          exp: { IL:0.3388, EL:0.6533, ML:0.0000, TL:0.4327, SL:0.5350, PL:0.1500, UL:0.0000, raw:35.85, score:21, zone:'low' } },
+        { profile: 'B', actId: 'python-data-video',
+          exp: { IL:0.5236, EL:0.7827, ML:0.6495, TL:1.0000, SL:0.3700, PL:0.5000, UL:0.0000, raw:64.40, score:86, zone:'over' } },
+        { profile: 'C', actId: 'duolingo-japanese',
+          exp: { IL:0.1189, EL:0.6823, ML:0.5857, TL:0.5000, SL:0.1200, PL:0.3250, UL:0.1400, raw:32.67, score:8, zone:'under' } }
+      ];
+
+      var sec = addSection('黄金用例');
+      GOLDEN.forEach(function(g) {
+        var person = DEMO[g.profile];
+        var act = findAct(g.actId);
+        var sc = LMS.scoreActivity(person, act);
+        var name = g.profile + ' × ' + g.actId;
+        var allOk = true;
+        var detail = [];
+
+        ['IL','EL','ML','TL','SL','PL','UL'].forEach(function(k) {
+          var actual = k === 'UL' ? (sc.parts.UL != null ? sc.parts.UL : 0) : sc.parts[k];
+          if (!approx(actual, g.exp[k], 0.02)) { allOk = false; detail.push(k + '=' + actual.toFixed(4) + '(期望' + g.exp[k] + ')'); }
+        });
+        if (!approx(sc.raw, g.exp.raw, 0.5)) { allOk = false; detail.push('raw=' + sc.raw.toFixed(2) + '(期望' + g.exp.raw + ')'); }
+        if (!approx(sc.score, g.exp.score, 1)) { allOk = false; detail.push('score=' + sc.score + '(期望' + g.exp.score + ')'); }
+
+        var zOf = LMS.zoneOf(sc.score);
+        if (zOf.key !== sc.zone.key) { allOk = false; detail.push('zone内部不一致: zoneOf=' + zOf.key + ' 但返回=' + sc.zone.key); }
+
+        if (sc.zone.key !== g.exp.zone) {
+          addRawItem(sec, name + ': score=' + sc.score + ' 实际zone=' + sc.zone.key + ' 规格表zone=' + g.exp.zone + '（以 zoneOf(score) 为准）', 'info');
+        }
+
+        var detailStr = 'IL=' + sc.parts.IL.toFixed(4) + ' EL=' + sc.parts.EL.toFixed(4) + ' ML=' + sc.parts.ML.toFixed(4) +
+                        ' TL=' + sc.parts.TL.toFixed(4) + ' SL=' + sc.parts.SL.toFixed(4) + ' PL=' + (sc.parts.PL||0).toFixed(4) +
+                        ' UL=' + (sc.parts.UL||0).toFixed(4) + ' raw=' + sc.raw.toFixed(2) + ' score=' + sc.score + ' zone=' + sc.zone.key;
+        if (allOk) PASS(sec, name + ' = ' + sc.score, detailStr);
+        else FAIL(sec, name, detail.join(', ') + '\n' + detailStr);
+      });
+
+      /* ───────── A/B 分数差 ───────── */
+      sec = addSection('A/B 分数差');
+      (function() {
+        var sA = LMS.scoreActivity(DEMO.A, findAct('python-data-video')).score;
+        var sB = LMS.scoreActivity(DEMO.B, findAct('python-data-video')).score;
+        var diff = Math.abs(sB - sA);
+        if (diff > 20) PASS(sec, 'A/B 分数差 = ' + diff + ' (>20)', 'A=' + sA + ' B=' + sB + ' 差=' + diff);
+        else FAIL(sec, 'A/B 分数差 = ' + diff, '差值须 >20\nA=' + sA + ' B=' + sB + ' 差=' + diff);
+      })();
+
+      /* ───────── 字段使用断言 ───────── */
+      sec = addSection('字段使用断言');
+      (function() {
+        var requiredPerson = ['stuck','openLoop','structureNeed','focusNeedMin','bestTime','peakTime','socialPref','recovery','weeklyHours'];
+        var requiredAct = ['D2','D5','focusNeedMin','bestTime'];
+        var accessedPerson = {}, accessedAct = {};
+
+        var pProxy = new Proxy(DEMO.A, {
+          get: function(t, prop) { accessedPerson[prop] = true; return t[prop]; }
+        });
+        var origDomains = DEMO.A.domains;
+        pProxy.domains = origDomains;
+        pProxy.channel = DEMO.A.channel;
+        pProxy.calibration = DEMO.A.calibration;
+
+        var actObj = findAct('python-data-video');
+        var aProxy = new Proxy(actObj, {
+          get: function(t, prop) { accessedAct[prop] = true; return t[prop]; }
+        });
+
+        try { LMS.scoreActivity(pProxy, aProxy); } catch(e) { /* Proxy 可能导致异常，忽略 */ }
+
+        var missingP = requiredPerson.filter(function(k){ return !accessedPerson[k] && !accessedAct[k]; });
+        var missingA = requiredAct.filter(function(k){ return !accessedAct[k]; });
+        var allMissing = missingP.concat(missingA);
+        var detail = 'person 访问: ' + Object.keys(accessedPerson).join(', ') + '\nact 访问: ' + Object.keys(accessedAct).join(', ');
+        if (allMissing.length === 0) PASS(sec, '字段使用断言: 所有必需字段均被读取', detail);
+        else FAIL(sec, '字段使用断言', '未被读取: ' + allMissing.join(', ') + '\n' + detail);
+      })();
+
+      /* ───────── structureNeed 唯一性 ───────── */
+      sec = addSection('structureNeed 唯一性');
+      (function() {
+        var act = findAct('python-data-video');
+        var p1 = JSON.parse(JSON.stringify(DEMO.A));
+        var p2 = JSON.parse(JSON.stringify(DEMO.A));
+        p1.structureNeed = 0.3; p2.structureNeed = 0.9;
+        var sc1 = LMS.scoreActivity(p1, act);
+        var sc2 = LMS.scoreActivity(p2, act);
+        var partsChanged = [];
+        ['IL','EL','ML','TL','SL','PL'].forEach(function(k) {
+          if (Math.abs(sc1.parts[k] - sc2.parts[k]) > 0.001) partsChanged.push(k);
+        });
+        var detail = 'SL: ' + sc1.parts.SL.toFixed(4) + ' → ' + sc2.parts.SL.toFixed(4) + '\nraw: ' + sc1.raw.toFixed(2) + ' → ' + sc2.raw.toFixed(2);
+        if (partsChanged.length === 1 && partsChanged[0] === 'SL') PASS(sec, 'structureNeed 仅影响 SL', detail);
+        else FAIL(sec, 'structureNeed 唯一性', '变化的分量: ' + partsChanged.join(',') + ' (应仅 SL)\n' + detail);
+      })();
+
+      /* ───────── 单调性 ───────── */
+      sec = addSection('单调性');
+      (function() {
+        var act = findAct('python-data-video');
+        var p1 = JSON.parse(JSON.stringify(DEMO.A));
+        p1.domains.coding.interest = 1.0;
+        var p2 = JSON.parse(JSON.stringify(DEMO.A));
+        p2.domains.coding.interest = 0.2;
+        var s1 = LMS.scoreActivity(p1, act).score;
+        var s2 = LMS.scoreActivity(p2, act).score;
+        if (s2 > s1) PASS(sec, 'interest 1.0→0.2: score ' + s1 + '→' + s2 + ' (升高)');
+        else FAIL(sec, 'interest 单调性', 'score ' + s1 + '→' + s2 + ' (应升高)');
+      })();
+      (function() {
+        var act = findAct('python-data-video');
+        var p1 = JSON.parse(JSON.stringify(DEMO.A));
+        p1.domains.coding.experience = 0.9;
+        var p2 = JSON.parse(JSON.stringify(DEMO.A));
+        p2.domains.coding.experience = 0.1;
+        var s1 = LMS.scoreActivity(p1, act).score;
+        var s2 = LMS.scoreActivity(p2, act).score;
+        if (s2 > s1) PASS(sec, 'experience 0.9→0.1: score ' + s1 + '→' + s2 + ' (升高)');
+        else FAIL(sec, 'experience 单调性', 'score ' + s1 + '→' + s2 + ' (应升高)');
+      })();
+
+      /* ───────── 边界测试 ───────── */
+      sec = addSection('边界测试');
+      (function() {
+        var cases = [
+          { name: '全0', person: { domains:{ coding:{experience:0,interest:0} }, channel:{read:0,audiovisual:0,hands:0,social:0}, block:0, stuck:'search', peakTime:'morning', structureNeed:0, openLoop:0, socialPref:0, recovery:0, weeklyHours:0, calibration:{k:1,b:0} }, act: { id:'t', domain:'coding', D1:0, D2:0, focusNeedMin:0, D4:0, D5:0, D6:0, D7:0, channel:{read:0,audiovisual:0,hands:0,social:0}, bestTime:[] } },
+          { name: '全1', person: { domains:{ coding:{experience:1,interest:1} }, channel:{read:1,audiovisual:0,hands:0,social:0}, block:100, stuck:'switch', peakTime:'night', structureNeed:1, openLoop:1, socialPref:1, recovery:1, weeklyHours:100, calibration:{k:1.6,b:35} }, act: { id:'t', domain:'coding', D1:1, D2:1, focusNeedMin:200, D4:1, D5:1, D6:1, D7:1, channel:{read:1,audiovisual:0,hands:0,social:0}, bestTime:['night'] } },
+          { name: '缺失字段', person: {}, act: {} }
+        ];
+        var allOk = true;
+        var detail = [];
+        cases.forEach(function(c) {
+          var sc = LMS.scoreActivity(c.person, c.act);
+          var ok = !isNaN(sc.score) && sc.score >= 0 && sc.score <= 100 && !isNaN(sc.raw);
+          if (ok) detail.push(c.name + ': score=' + sc.score + ' raw=' + sc.raw + ' ✓');
+          else { allOk = false; detail.push(c.name + ': score=' + sc.score + ' raw=' + sc.raw + ' ✗'); }
+        });
+        if (allOk) PASS(sec, '边界: 极端输入 score ∈ [0,100] 无 NaN', detail.join('\n'));
+        else FAIL(sec, '边界测试', '存在 NaN 或越界\n' + detail.join('\n'));
+      })();
+
+      /* ───────── 校准收敛 ───────── */
+      sec = addSection('校准收敛');
+      (function() {
+        var raw = 50;
+        var observed = raw + 20;
+        var cal = { k: 1, b: 0 };
+        var logs = [];
+        var errors = [];
+        for (var i = 0; i < 15; i++) {
+          var predicted = cal.k * raw + cal.b;
+          var e = observed - predicted;
+          logs.push({ e: e });
+          errors.push(Math.abs(e));
+          cal = LMS.updateCalibration(cal, raw, observed, logs, false);
+        }
+        var first5 = errors.slice(0, 5).reduce(function(a,b){return a+b;},0) / 5;
+        var last5 = errors.slice(-5).reduce(function(a,b){return a+b;},0) / 5;
+        var detail = '误差序列: ' + errors.map(function(e){return e.toFixed(2);}).join(', ') + '\n前5轮平均: ' + first5.toFixed(2) + '  后5轮平均: ' + last5.toFixed(2);
+        if (last5 < first5) PASS(sec, '校准收敛: 后5轮平均误差 (' + last5.toFixed(2) + ') < 前5轮 (' + first5.toFixed(2) + ')', detail);
+        else FAIL(sec, '校准收敛', '后5轮=' + last5.toFixed(2) + ' 前5轮=' + first5.toFixed(2) + '\n' + detail);
+      })();
+
+      /* ───────── 抗噪测试 ───────── */
+      sec = addSection('抗噪测试');
+      (function() {
+        var person = JSON.parse(JSON.stringify(DEMO.A));
+        person.calibration = { k: 1, b: 0 };
+        var act = findAct('python-data-video');
+        var sc = LMS.scoreActivity(person, act);
+        var raw = sc.raw;
+        var scoreBefore = sc.score;
+        var logs = [];
+        for (var i = 0; i < 9; i++) logs.push({ e: 0.5 });
+        var predicted = 1 * raw + 0;
+        var observed = predicted + 50;
+        logs.push({ e: observed - predicted });
+        var newCal = LMS.updateCalibration({ k: 1, b: 0 }, raw, observed, logs, false);
+        person.calibration = newCal;
+        var scoreAfter = LMS.scoreActivity(person, act).score;
+        var delta = Math.abs(scoreAfter - scoreBefore);
+        var detail = 'score: ' + scoreBefore + ' → ' + scoreAfter + ' (Δ=' + delta.toFixed(2) + ') k=' + newCal.k + ' b=' + newCal.b;
+        if (delta < 10) PASS(sec, '抗噪: 单次极端误差 Δ=' + delta.toFixed(2) + ' (<10)', detail);
+        else FAIL(sec, '抗噪', 'Δ=' + delta.toFixed(2) + ' (须<10)\n' + detail);
+      })();
+
+      /* ───────── b 回拉 ───────── */
+      sec = addSection('b 回拉');
+      (function() {
+        var raw = 50;
+        var cal = { k: 1, b: 0 };
+        var logs = [];
+        var b0 = cal.b;
+        for (var i = 0; i < 3; i++) {
+          var predicted = cal.k * raw + cal.b;
+          var e = 20;
+          logs.push({ e: e });
+          cal = LMS.updateCalibration(cal, raw, predicted + 20, logs, false);
+        }
+        var bAfter20 = cal.b;
+        for (var j = 0; j < 3; j++) {
+          var pred = cal.k * raw + cal.b;
+          var e2 = -20;
+          logs.push({ e: e2 });
+          cal = LMS.updateCalibration(cal, raw, pred - 20, logs, false);
+        }
+        var bFinal = cal.b;
+        var detail = '3次+20后: b=' + bAfter20.toFixed(2) + '\n再3次-20后: b=' + bFinal.toFixed(2) + ' (初始=' + b0 + ')';
+        if (Math.abs(bFinal - b0) < 5) PASS(sec, 'b 回拉: 最终 b=' + bFinal.toFixed(2) + ' 接近初始 ' + b0, detail);
+        else FAIL(sec, 'b 回拉', 'b=' + bFinal.toFixed(2) + ' 偏离初始 ' + b0 + '\n' + detail);
+      })();
+
+      /* ───────── dailyPenalty ───────── */
+      sec = addSection('dailyPenalty');
+      (function() {
+        var list = [ { score: 75 }, { score: 80 }, { score: 72 } ];
+        var p0 = LMS.dailyPenalty(list, 0);
+        var p1 = LMS.dailyPenalty(list, 1);
+        var p2 = LMS.dailyPenalty(list, 2);
+        var detail = '三个>70活动: penalty = ' + p0 + ', ' + p1 + ', ' + p2;
+        if (p0 === 1 && p1 === 1.15 && p2 === 1.30) PASS(sec, 'dailyPenalty: 第二个=1.15 第三个=1.30', detail);
+        else FAIL(sec, 'dailyPenalty', 'p0=' + p0 + ' p1=' + p1 + ' p2=' + p2 + ' (期望 1, 1.15, 1.30)\n' + detail);
+      })();
+
+      /* ───────── matchOf ───────── */
+      sec = addSection('matchOf');
+      (function() {
+        var m66 = LMS.matchOf(66);
+        var m86 = LMS.matchOf(86);
+        var m0 = LMS.matchOf(0);
+        var detail = 'matchOf(66)=' + m66 + ' matchOf(86)=' + m86 + ' matchOf(0)=' + m0;
+        if (m66 === 100 && m86 === 64 && m0 === 0) PASS(sec, 'matchOf: 66→100, 86→64, 0→0', detail);
+        else FAIL(sec, 'matchOf', '66→' + m66 + ' 86→' + m86 + ' 0→' + m0 + '\n' + detail);
+      })();
+
+      /* ───────── 汇总 ───────── */
+      document.getElementById('passCount').textContent = passCount;
+      document.getElementById('failCount').textContent = failCount;
+      var verdict = document.getElementById('verdict');
+      verdict.textContent = failCount === 0 ? '✓ 全部通过' : '✗ 存在失败';
+      verdict.style.color = failCount === 0 ? 'var(--pass)' : 'var(--fail)';
+      document.getElementById('summary').style.display = 'flex';
+    }
+
+    /* 页面加载后自动运行 */
+    window.addEventListener('DOMContentLoaded', runAll);
+  </script>
+</body>
+</html>

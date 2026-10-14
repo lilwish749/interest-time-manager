@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>兴趣学习负荷管理系统</title>
-  <link rel="stylesheet" href="styles.css">
+  <title>学习配速器 · 帮你把挑战调到刚好</title>
+  <link rel="stylesheet" href="styles.css?v=2">
 </head>
 <body>
   <header class="app-header">
     <div class="brand">
-      <span class="brand-mark">LMS</span>
-      <span class="brand-name">兴趣学习负荷管理</span>
+      <span class="brand-mark">配速</span>
+      <span class="brand-name">学习配速器</span>
     </div>
     <nav class="nav" id="nav">
       <a href="#/welcome">首页</a>
@@ -23,10 +23,10 @@
   <main id="app" class="app"></main>
 
   <footer class="app-footer">
-    <span>纯静态零依赖 · 数据本地存储 · v1.0</span>
+    <span>纯静态零依赖 · 数据本地存储 · 把挑战调到刚好</span>
   </footer>
 
-  <!-- 经典脚本，按依赖顺序加载 -->
+  <!-- 经典脚本，按依赖顺序加载：数据 → 引擎 → 存储 → 问卷 → 视图 → 路由 -->
   <script src="data/activities.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/store.js"></script>
