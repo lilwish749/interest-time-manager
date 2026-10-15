@@ -118,7 +118,7 @@
       hero.appendChild(el('div', 'tagline', '帮你把挑战调到刚好'));
       hero.appendChild(el('p', '', '识别每个学习活动的真实负荷，找到你的最佳学习区，规划一周节奏。纯静态、零依赖、数据本地存储。'));
       var has = LMS.store.hasPerson();
-      var btn = el('button', 'btn', has ? '完善我的画像' : '开始问卷（约 5 分钟）');
+      var btn = el('button', 'btn', has ? '完善我的画像' : '开始问卷（几个小问题）');
       btn.onclick = function () { location.hash = '#/quiz'; };
       hero.appendChild(btn);
       if (has) {
