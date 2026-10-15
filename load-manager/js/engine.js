@@ -28,6 +28,31 @@
     return clamp(100 - Math.abs(score - 66) * 1.8, 0, 100);
   }
 
+  /* ───────── 5 级通俗标识（仅用于界面展示，不参与评分逻辑） ───────── */
+  /* 负荷分（0-100）→ 5 级 */
+  var LEVELS = [
+    { max: 35,  label: '很轻松',   color: '#3FB950' },
+    { max: 58,  label: '比较轻松', color: '#58A6FF' },
+    { max: 76,  label: '刚刚好',   color: '#D29922' },
+    { max: 90,  label: '有点吃力', color: '#F0883E' },
+    { max: 101, label: '太吃力',   color: '#F85149' }
+  ];
+  function levelOf(score) {
+    score = clamp(score, 0, 100);
+    for (var i = 0; i < LEVELS.length; i++) {
+      if (score < LEVELS[i].max) return LEVELS[i];
+    }
+    return LEVELS[LEVELS.length - 1];
+  }
+  /* 周负荷 / 日负荷百分比 → 5 级 */
+  function levelOfPercent(pct) {
+    if (pct < 40)  return { label: '很轻松',   color: '#3FB950' };
+    if (pct < 70)  return { label: '比较轻松', color: '#58A6FF' };
+    if (pct < 100) return { label: '刚刚好',   color: '#D29922' };
+    if (pct < 120) return { label: '有点吃力', color: '#F0883E' };
+    return { label: '太吃力', color: '#F85149' };
+  }
+
   /* ───────── 核心评分 ───────── */
   var W = { IL: 0.26, EL: 0.20, ML: 0.18, TL: 0.14, SL: 0.12, PL: 0.10 };
 
@@ -140,14 +165,14 @@
     return Math.round(conf * 100) / 100;
   }
 
-  /* ───────── 主要负荷来源 ───────── */
+  /* ───────── 主要负荷来源（通俗表述） ───────── */
   var PART_LABELS = {
-    IL: '认知门槛',
-    EL: '通道不匹配',
-    ML: '兴趣偏低',
-    TL: '时间不匹配',
-    SL: '切换成本',
-    PL: '产出压力'
+    IL: '动脑强度',
+    EL: '学习方式不合拍',
+    ML: '兴趣不够浓',
+    TL: '时间对不上',
+    SL: '来回切换',
+    PL: '要有成果的压力'
   };
 
   function topContributor(parts) {
@@ -177,28 +202,28 @@
 
     var out = [];
     if (score > 76 && I > 0.7) {
-      out.push({ title: '心流陷阱', text: '这件事你很感兴趣但负荷偏高，建议拆成 ≤45 分钟小块分两天做。' });
+      out.push({ title: '又爱又累', text: '这件事你很感兴趣但比较费劲，建议拆成每次 45 分钟以内的小块，分两天做。' });
     }
     if (score > 76 && mismatch > 0.5) {
-      out.push({ title: '通道不匹配', text: '换成你更偏好的形式，例如「' + chName + '」。' });
+      out.push({ title: '学习方式不合拍', text: '换个更适合你的学法，比如「' + chName + '」。' });
     }
     if (score > 76 && TL > 0.6) {
-      out.push({ title: '时间不匹配', text: '挪到该活动的最佳时段，或延长单次时间块以降低切换成本。' });
+      out.push({ title: '时间对不上', text: '挪到你脑子最清醒的时段去做，或者一次学久一点、少来回切换。' });
     }
     if (UL > 0.1 || zone === 'under') {
-      out.push({ title: '挑战不足', text: '这个活动对你太简单了，建议加难度、缩短时间、或换成更进阶的版本 —— 无聊比疲劳更容易让人放弃。' });
+      out.push({ title: '太简单没劲', text: '这个活动对你来说太简单了，建议加点难度、缩短时间，或者换个更进阶的版本 —— 太无聊比太累更容易让人放弃。' });
     }
     if (I < 0.4) {
-      out.push({ title: '兴趣偏低', text: '缩短到 15 分钟、提高反馈即时性，或与喜欢的活动绑定（做完它才做喜欢的）。' });
+      out.push({ title: '兴趣不够浓', text: '每次只学 15 分钟，或者把它和你喜欢的事绑在一起（做完它才做喜欢的那件）。' });
     }
     if (score < 35) {
-      out.push({ title: '负荷很轻', text: '可与其他活动叠加或适当加量。' });
+      out.push({ title: '很轻松', text: '这件很省力，可以和其他事排在同一天，或者适当加量。' });
     }
     if (zone === 'optimal') {
-      out.push({ title: '处在最佳学习区', text: '保持当前安排，这是高效学习的甜区。' });
+      out.push({ title: '难度刚刚好', text: '保持现在的安排就好，这正是你学得又快又好的状态。' });
     }
     if (out.length === 0) {
-      out.push({ title: '常规', text: '当前负荷可接受，按需调整即可。' });
+      out.push({ title: '正常安排', text: '目前的强度可以接受，按自己的节奏来就行。' });
     }
     return out;
   }
@@ -305,6 +330,8 @@
     scoreActivity: scoreActivity,
     zoneOf: zoneOf,
     matchOf: matchOf,
+    levelOf: levelOf,
+    levelOfPercent: levelOfPercent,
     computeConfidence: computeConfidence,
     topContributor: topContributor,
     prescriptions: prescriptions,

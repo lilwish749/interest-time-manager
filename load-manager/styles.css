@@ -117,6 +117,10 @@ input, select, textarea { font-family: inherit; }
 .quiz-question .q-text { font-weight: 600; margin-bottom: 10px; font-size: 15px; }
 .quiz-question.missing { border-color: var(--zone-over); box-shadow: 0 0 0 1px var(--zone-over); }
 .quiz-hint { color: var(--text-dim); font-size: 14px; margin: 0 0 14px; }
+.quiz-att-hint {
+  margin-top: 10px; padding: 10px 14px; border-radius: 8px; font-size: 13.5px; line-height: 1.6;
+  color: var(--zone-optimal); background: rgba(210,153,34,0.12); border: 1px solid rgba(210,153,34,0.35);
+}
 .quiz-actions { display: flex; justify-content: space-between; margin-top: 18px; flex-wrap: wrap; gap: 8px; }
 
 input[type=range] { width: 100%; accent-color: var(--primary); }
@@ -158,14 +162,14 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 
 /* 结果页 */
 .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.big-number { font-size: 48px; font-weight: 800; line-height: 1; }
+.big-number { font-size: 30px; font-weight: 800; line-height: 1; }
 .big-number .unit { font-size: 14px; color: var(--text-dim); margin-left: 4px; }
 .confidence-ring { display: flex; align-items: center; gap: 16px; }
 .radar-wrap { display: flex; justify-content: center; }
 
 /* 匹配度展示：大字号 match，小字号 score */
 .match-block { display: flex; align-items: baseline; gap: 10px; margin: 6px 0; }
-.match-big { font-size: 44px; font-weight: 800; line-height: 1; color: var(--zone-optimal); }
+.match-big { font-size: 30px; font-weight: 800; line-height: 1; }
 .match-big .unit { font-size: 14px; color: var(--text-dim); }
 .match-sub { font-size: 13px; color: var(--text-dim); }
 .match-sub b { color: var(--text); font-weight: 600; }
@@ -178,7 +182,7 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 }
 .act-card:hover { transform: translateY(-2px); border-color: var(--primary); }
 .act-card .act-name { font-weight: 600; font-size: 15px; }
-.act-card .act-match { font-size: 32px; font-weight: 800; line-height: 1; }
+.act-card .act-match { font-size: 18px; font-weight: 800; line-height: 1; }
 .act-card .act-match .unit { font-size: 12px; color: var(--text-dim); }
 .act-card .act-score { font-size: 14px; color: var(--text-dim); }
 .act-card .zone-bar { height: 6px; border-radius: 4px; overflow: hidden; background: var(--card-2); }
@@ -221,7 +225,7 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 
 /* 活动详情 */
 .detail-score { display: flex; align-items: center; gap: 18px; margin-bottom: 16px; flex-wrap: wrap; }
-.detail-score .match-big { font-size: 56px; }
+.detail-score .match-big { font-size: 36px; }
 .detail-score .num { font-size: 56px; font-weight: 800; line-height: 1; }
 .detail-score .meta { color: var(--text-dim); font-size: 13px; }
 
@@ -306,5 +310,5 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 }
 @media (max-width: 400px) {
   .act-grid { grid-template-columns: 1fr; }
-  .big-number, .match-big { font-size: 40px; }
+  .big-number, .match-big { font-size: 24px; }
 }

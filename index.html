@@ -328,23 +328,23 @@
 
     <!-- 兴趣池写入(占位,内容待开发) -->
     <section id="page-interest" class="page" style="display:none">
-      <div class="page-head"><h2>兴趣池写入</h2><span class="muted">功能规划中</span></div>
+      <div class="page-head"><h2>兴趣池写入</h2><span class="muted">制作中</span></div>
       <div class="placeholder-card">
         <div class="ph-icon">🌱</div>
         <h3>兴趣池写入</h3>
-        <p>该功能模块尚在规划中,暂未提供具体内容。</p>
-        <p class="ph-hook">未来将与「负荷管理系统」「计划时间表」「社交功能」联动。</p>
+        <p>这个功能还在制作中，做好后就能用了。</p>
+        <p class="ph-hook">做好后会和「负荷管理系统」「计划时间表」「社交功能」一起配合使用。</p>
       </div>
     </section>
 
     <!-- 社交功能(占位,内容待开发) -->
     <section id="page-social" class="page" style="display:none">
-      <div class="page-head"><h2>社交功能</h2><span class="muted">功能规划中</span></div>
+      <div class="page-head"><h2>社交功能</h2><span class="muted">制作中</span></div>
       <div class="placeholder-card">
         <div class="ph-icon">💬</div>
         <h3>社交功能</h3>
-        <p>该功能模块尚在规划中,暂未提供具体内容。</p>
-        <p class="ph-hook">未来将与「兴趣池写入」「计划时间表」「负荷管理系统」联动。</p>
+        <p>这个功能还在制作中，做好后就能用了。</p>
+        <p class="ph-hook">做好后会和「兴趣池写入」「计划时间表」「负荷管理系统」一起配合使用。</p>
       </div>
     </section>
   </main>
@@ -709,11 +709,11 @@ window.LMSBridge={
 };
 
 /* 日负荷等级分级:依据负荷管理系统画像 + 当日事项时长
-   等级划分(单独一天的负荷等级):
+   等级划分(单独一天的负荷等级,共5档,界面只显示文字不显示数值):
    - 无画像:不显示徽标
    - 有画像:按 capacity=weeklyHours*50*(0.7+0.6*recovery) 容量,
      dayLoad=Σ(基线负荷% * 事项小时) / 容量 * 100
-   - 等级: <70% 余量(绿) | 70-100% 正常(蓝) | 100-110% 偏高(橙) | >110% 过载(红) */
+   - 等级: <40% 很轻松(绿) | 40-70% 比较轻松(蓝) | 70-100% 刚刚好(黄) | 100-120% 有点吃力(橙) | ≥120% 太吃力(红) */
 function renderDayLoadBadge(){
   const badge=$('dayLoadBadge');
   const p=window.LMSBridge.getProfile();
@@ -724,15 +724,15 @@ function renderDayLoadBadge(){
   // 当日已安排事项的负荷量:用个人基线作为事项平均负荷占比
   const dayLoad=totalHours>0?(p.baseline*totalHours)/capacity*100:0;
   let level,label,color;
-  if(dayLoad<70){level='low';label='日负荷·余量';color='#16a34a'}
-  else if(dayLoad<100){level='normal';label='日负荷·正常';color='#3b82f6'}
-  else if(dayLoad<=110){level='high';label='日负荷·偏高';color='#f59e0b'}
-  else{level='over';label='日负荷·过载';color='#dc2626'}
-  const ratio=Math.min(999,Math.round(dayLoad));
+  if(dayLoad<40){level='low';label='很轻松';color='#16a34a'}
+  else if(dayLoad<70){level='normal';label='比较轻松';color='#3b82f6'}
+  else if(dayLoad<100){level='good';label='刚刚好';color='#f59e0b'}
+  else if(dayLoad<120){level='high';label='有点吃力';color='#f97316'}
+  else{level='over';label='太吃力';color='#dc2626'}
   window.LMSBridge._dayLoad={level,label,color,ratio:dayLoad,hours:totalHours,capacity};
   badge.style.display='inline-flex';
   badge.style.background=color+'1a';badge.style.color=color;
-  badge.innerHTML=`<span class="pip" style="background:${color}"></span>${label} ${ratio}%(${totalHours.toFixed(1)}h)`;
+  badge.innerHTML=`<span class="pip" style="background:${color}"></span>今天${label}(${totalHours.toFixed(1)}小时)`;
   // 同步回写到负荷系统画像的今日负荷,供未来联动读取
   try{localStorage.setItem('lms.dayload.v1',JSON.stringify(window.LMSBridge._dayLoad))}catch{}
 }

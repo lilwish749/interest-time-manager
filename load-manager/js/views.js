@@ -19,17 +19,17 @@
     music: '音乐', photography: '摄影', history: '历史人文', reading: '阅读'
   };
   // 7 维全称与颜色（UL 为负向分量，用青色）
-  var PART_FULL = { IL: '认知门槛', EL: '通道不匹配', ML: '兴趣偏低', TL: '时间不匹配', SL: '切换成本', PL: '产出压力', UL: '挑战不足(负向)' };
+  var PART_FULL = { IL: '动脑强度', EL: '学习方式不合拍', ML: '兴趣不够浓', TL: '时间对不上', SL: '来回切换', PL: '要有成果的压力', UL: '太简单没劲(扣分项)' };
   var PART_COLORS = { IL: '#4B9FFF', EL: '#58A6FF', ML: '#D29922', TL: '#F0883E', SL: '#3FB950', PL: '#D29922', UL: '#39C5BB' };
   var WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
-  // 匹配度梯度着色：高=绿，低=红，用于卡片视觉区分
-  // matchOf(66)=100，越接近理想点匹配度越高
+  // 匹配度 5 级标识：高=绿，低=红，用于卡片视觉区分
   function matchTone(match) {
-    if (match >= 85) return { color: '#3FB950', label: '高度匹配', cls: 'match-high' };      // 绿
-    if (match >= 70) return { color: '#39C5BB', label: '良好匹配', cls: 'match-good' };       // 青
-    if (match >= 55) return { color: '#D29922', label: '一般匹配', cls: 'match-mid' };        // 金
-    return { color: '#F85149', label: '匹配偏低', cls: 'match-low' };                         // 红
+    if (match >= 85) return { color: '#3FB950', label: '非常合适', cls: 'match-high' };      // 绿
+    if (match >= 70) return { color: '#39C5BB', label: '比较合适', cls: 'match-good' };      // 青
+    if (match >= 55) return { color: '#D29922', label: '一般',      cls: 'match-mid' };      // 金
+    if (match >= 35) return { color: '#F0883E', label: '不太合适',  cls: 'match-low' };      // 橙
+    return { color: '#F85149', label: '不合适', cls: 'match-low' };                          // 红
   }
 
   // 缓存评分（新版 scoreActivity 只需 person + activity）
@@ -55,11 +55,11 @@
       return wl.percent;
     }
 
-    // 计划 A：稳态起步 —— 低负荷活动，周负荷 < 70%
+    // 计划 A：轻松起步 —— 省力活动，周负荷 < 70%
     var lowActs = acts.filter(function (x) { return x.sc.score < 50; })
       .sort(function (a, b) { return a.sc.score - b.sc.score; });
-    var planA = { name: '稳态起步', tag: '轻松', tone: '#3FB950',
-      desc: '从低负荷活动开始，每天轻松学一点，适合刚开始建立学习习惯。',
+    var planA = { name: '轻松起步', tag: '轻松', tone: '#3FB950',
+      desc: '从最省力的事情开始，每天轻松学一点，先把学习习惯养起来。',
       items: [] };
     var hA = 0;
     for (var i = 0; i < lowActs.length && i < 3; i++) {
@@ -67,9 +67,9 @@
       planA.items.push({ activityId: lowActs[i].act.id, hours: Math.min(hrs, 2), weekday: i });
       hA += lowActs[i].sc.score * Math.min(hrs, 2);
     }
-    planA.why = '这些活动负荷都低于 50 分，凑在一起也不会超载，帮你先形成节奏。';
+    planA.why = '这些都是对你来说很省力的事，凑在一起也不会累，帮你先把节奏带起来。';
 
-    // 计划 B：最佳学习区 —— 优先 optimal 区活动，周负荷 80-100%
+    // 计划 B：难度刚好 —— 优先 optimal 区活动
     var optActs = acts.filter(function (x) { return x.sc.zone.key === 'optimal'; })
       .sort(function (a, b) { return b.sc.match - a.sc.match; });
     if (optActs.length < 2) {
@@ -78,20 +78,20 @@
         if (x.sc.score >= 50 && x.sc.score < 76 && optActs.indexOf(x) < 0) optActs.push(x);
       });
     }
-    var planB = { name: '最佳学习区', tag: '高效', tone: '#D29922',
-      desc: '优先安排处在最佳学习区的活动，这是你高效学习的甜区。',
+    var planB = { name: '难度刚好', tag: '高效', tone: '#D29922',
+      desc: '安排的都是对你来说难度正好的事，学得进去，效率也高。',
       items: [] };
     for (var j = 0; j < optActs.length && j < 3; j++) {
       var hrsB = Math.max(1.5, Math.round((cap * 0.28) / Math.max(40, optActs[j].sc.score)));
       planB.items.push({ activityId: optActs[j].act.id, hours: Math.min(hrsB, 3), weekday: j });
     }
-    planB.why = '这些活动的匹配度最高，处在金色最佳学习区，保持当前安排效率最高。';
+    planB.why = '这些事和你的匹配度最高，保持这样的安排，学习效果最好。';
 
-    // 计划 C：挑战突破 —— 含 1 个 high 区 + 低负荷搭配，周负荷 100-110%
+    // 计划 C：挑战突破 —— 含 1 个 high 区 + 省力活动搭配
     var highAct = acts.filter(function (x) { return x.sc.zone.key === 'high' || x.sc.score >= 76; })
       .sort(function (a, b) { return b.sc.score - a.sc.score; })[0];
     var planC = { name: '挑战突破', tag: '进阶', tone: '#F0883E',
-      desc: '安排一个较高负荷的挑战活动，搭配轻松活动恢复，适合想突破时。',
+      desc: '挑一件有点难度的事试试，再搭配几件轻松的事缓一缓，适合想突破自己的时候。',
       items: [] };
     if (highAct) {
       planC.items.push({ activityId: highAct.act.id, hours: 2, weekday: 1 });
@@ -101,7 +101,7 @@
         planC.items.push({ activityId: x.act.id, hours: 1.5, weekday: idx === 0 ? 3 : 5 });
       });
     }
-    planC.why = '高强度活动配低负荷恢复，利用同天惩罚模型自然控制总负荷。';
+    planC.why = '有点难度的事搭配轻松的事，一张一弛，不容易累过头。';
 
     return [planA, planB, planC].map(function (ps) {
       ps.loadPercent = estLoad(ps.items);
@@ -116,7 +116,7 @@
       var hero = el('div', 'welcome-hero');
       hero.appendChild(el('h1', '', '学习配速器'));
       hero.appendChild(el('div', 'tagline', '帮你把挑战调到刚好'));
-      hero.appendChild(el('p', '', '识别每个学习活动的真实负荷，找到你的最佳学习区，规划一周节奏。纯静态、零依赖、数据本地存储。'));
+      hero.appendChild(el('p', '', '看看每件事学起来有多吃力，找到难度刚好的安排，轻松规划一周。不用安装，数据就保存在你自己的电脑上。'));
       var has = LMS.store.hasPerson();
       var btn = el('button', 'btn', has ? '完善我的画像' : '开始问卷（几个小问题）');
       btn.onclick = function () { location.hash = '#/quiz'; };
@@ -130,9 +130,9 @@
       app.appendChild(hero);
 
       var fl = el('div', 'feature-list');
-      fl.appendChild(el('div', 'card', '<h3>7 维活动建模</h3><p>认知门槛、通道不匹配、兴趣、时间块、切换、产出压力 + 挑战不足，精确刻画每个活动。</p>'));
-      fl.appendChild(el('div', 'card', '<h3>个人化校准</h3><p>基线锚点 + 通道偏好 + 在线反馈，越用越准。</p>'));
-      fl.appendChild(el('div', 'card', '<h3>智能处方</h3><p>对每个活动给出拆解、换通道、挪时段等可执行建议。</p>'));
+      fl.appendChild(el('div', 'card', '<h3>每件事都算得准</h3><p>从动脑程度、学习方式、兴趣、时间等各个方面，衡量每件事对你来说有多吃力。</p>'));
+      fl.appendChild(el('div', 'card', '<h3>越用越懂你</h3><p>根据你的问卷回答和每次学习后的反馈，不断调整，越用越准。</p>'));
+      fl.appendChild(el('div', 'card', '<h3>给你实际可行的建议</h3><p>告诉你怎么拆分任务、换个学法、挪个时段，每一条都能直接照做。</p>'));
       app.appendChild(fl);
     },
 
@@ -155,19 +155,19 @@
     library: function () {
       var app = $app(); app.innerHTML = '';
       app.appendChild(el('h1', 'page-title', '活动库'));
-      app.appendChild(el('p', 'page-sub', '每个活动的负荷分（0-100）与匹配度。点击卡片查看 7 维拆解与建议。'));
+      app.appendChild(el('p', 'page-sub', '看看每件事对你来说有多吃力、有多合适。点开卡片能看详细分析和建议。'));
 
       // 画像状态行
       var status = el('div', 'row', '');
       var hasPerson = LMS.store.hasPerson();
       var p = LMS.store.getPerson() || LMS.store.defaultPerson();
       if (!hasPerson) {
-        status.appendChild(el('span', 'tag', '还没填写问卷，当前按通用默认画像估算'));
+        status.appendChild(el('span', 'tag', '还没填问卷，先按一般情况估算，填了会更准'));
         var go = el('button', 'btn sm', '去填写问卷');
         go.onclick = function () { location.hash = '#/quiz'; };
         status.appendChild(go);
       } else {
-        status.appendChild(el('span', 'tag', '已按你的画像评分（吃力指数 ' + Math.round(p.baseline) + ' 分）'));
+        status.appendChild(el('span', 'tag', '已按你的情况评估每件事的吃力程度'));
       }
       app.appendChild(status);
 
@@ -181,12 +181,12 @@
         var phead = el('div', 'plan-head');
         phead.appendChild(el('h2', 'section-title', '为你推荐的本周计划'));
         app.appendChild(phead);
-        app.appendChild(el('p', 'page-sub', '根据你的画像生成 3 套不同定位的本周计划。每项时长都能改，改完点「采用此计划」一键生效。'));
+        app.appendChild(el('p', 'page-sub', '根据你的情况准备了 3 套各有侧重的本周安排。每项时长都能改，改完点「采用此计划」一键生效。'));
 
         var pgrid = el('div', 'grid cols-3');
         planSets.forEach(function (ps) { pgrid.appendChild(makePlanCard(ps, p, scoredMap)); });
         app.appendChild(pgrid);
-        app.appendChild(el('div', 'notice', '采用某套计划后，会替换「周负荷」里的本周清单；之后仍可在活动详情页单独增删。'));
+        app.appendChild(el('div', 'notice', '采用某套安排后，会替换「本周安排」页面里的清单；之后仍可在活动详情里单独增删。'));
       }
 
       app.appendChild(el('hr', 'section-divider'));
@@ -195,7 +195,7 @@
       // 工具栏：排序 + 筛选（统一样式）
       var toolbar = el('div', 'lib-toolbar');
       var sortSel = el('select', 'lib-select'); sortSel.id = 'lib-sort';
-      [['match', '按匹配度'], ['score', '按负荷分'], ['interest', '按兴趣']].forEach(function (o) {
+      [['match', '按合适程度'], ['score', '按吃力程度'], ['interest', '按兴趣']].forEach(function (o) {
         var op = el('option', ''); op.value = o[0]; op.textContent = o[1]; sortSel.appendChild(op);
       });
       sortSel.onchange = function () { renderGrid(); };
@@ -203,7 +203,7 @@
       toolbar.appendChild(sortSel);
 
       var filterSel = el('select', 'lib-select'); filterSel.id = 'lib-filter';
-      [['all', '全部'], ['optimal', '只看最佳学习区'], ['coding', '编程'], ['design', '设计'], ['reading', '阅读'], ['language', '语言'], ['music', '音乐'], ['writing', '写作'], ['photography', '摄影'], ['history', '历史']].forEach(function (o) {
+      [['all', '全部'], ['optimal', '只看难度刚好的'], ['coding', '编程'], ['design', '设计'], ['reading', '阅读'], ['language', '语言'], ['music', '音乐'], ['writing', '写作'], ['photography', '摄影'], ['history', '历史']].forEach(function (o) {
         var op = el('option', ''); op.value = o[0]; op.textContent = o[1]; filterSel.appendChild(op);
       });
       filterSel.onchange = function () { renderGrid(); };
@@ -257,25 +257,25 @@
       back.onclick = function () { location.hash = '#/library'; };
       app.appendChild(back);
 
-      // 顶部分数 + 匹配度
+      // 顶部匹配度等级 + 吃力程度
       var scoreCard = el('div', 'card');
       var ds = el('div', 'detail-score');
-      // 匹配度大字号
+      // 匹配度等级大字号
+      var tone = matchTone(sc.match);
+      var lv = LMS.levelOf(sc.score);
       var matchDiv = el('div', '');
-      matchDiv.appendChild(el('div', 'match-big', sc.match + '<span class="unit">匹配度</span>'));
-      matchDiv.appendChild(el('div', 'match-sub', '负荷分 <b style="color:' + sc.zone.color + '">' + sc.score + '</b> · <span class="tag" style="color:' + sc.zone.color + ';border-color:' + sc.zone.color + '">' + sc.zone.label + '</span>'));
+      matchDiv.appendChild(el('div', 'match-big', '<span style="color:' + tone.color + '">' + tone.label + '</span><span class="unit"> 合适程度</span>'));
+      matchDiv.appendChild(el('div', 'match-sub', '吃力程度 <b style="color:' + lv.color + '">' + lv.label + '</b>'));
       ds.appendChild(matchDiv);
       var meta = el('div', 'meta');
-      meta.innerHTML = '<div>领域：<span class="tag">' + esc(DOMAIN_LABELS[act.domain] || act.domain) + '</span></div>' +
-        '<div style="margin-top:6px">置信度：' + Math.round(sc.confidence * 100) + '%</div>' +
-        '<div style="margin-top:6px">原始分：' + sc.raw + ' · 状态修正后：' + sc.stateAdj + '</div>';
+      meta.innerHTML = '<div>领域：<span class="tag">' + esc(DOMAIN_LABELS[act.domain] || act.domain) + '</span></div>';
       ds.appendChild(meta);
       scoreCard.appendChild(ds);
       app.appendChild(scoreCard);
 
-      // 7 维拆解
+      // 吃力原因拆解
       var partsCard = el('div', 'card');
-      partsCard.appendChild(el('h3', '', '负荷 7 维拆解'));
+      partsCard.appendChild(el('h3', '', '吃力在哪里？'));
       ['IL', 'EL', 'ML', 'TL', 'SL', 'PL', 'UL'].forEach(function (k) {
         var v = sc.parts[k] || 0;
         var row = el('div', 'bar-row' + (k === 'UL' ? ' bar-negative' : ''));
@@ -287,12 +287,12 @@
         partsCard.appendChild(row);
       });
       var src = LMS.topContributor(sc.parts);
-      partsCard.appendChild(el('div', 'notice', '主要负荷来源：' + src));
+      partsCard.appendChild(el('div', 'notice', '最吃力的原因：' + src));
       app.appendChild(partsCard);
 
-      // 处方
+      // 建议
       var rxCard = el('div', 'card');
-      rxCard.appendChild(el('h3', '', '处方建议'));
+      rxCard.appendChild(el('h3', '', '怎么让它更轻松'));
       rx.forEach(function (r) {
         var c = el('div', 'rx-card');
         c.appendChild(el('div', 'rx-title', r.title));
@@ -331,8 +331,16 @@
       fbWrap.appendChild(el('div', 'fb-title', '完成这次活动后，告诉我实际有多累'));
       var fbRow = el('div', 'fb-row');
       var r = el('input'); r.type = 'range'; r.min = 0; r.max = 10; r.value = Math.round(sc.score / 10);
-      var v = el('div', 'range-value', r.value);
-      r.oninput = function () { v.textContent = r.value; };
+      function tiredWord(v) {
+        v = +v;
+        if (v <= 2) return '一点也不累';
+        if (v <= 4) return '稍微有点累';
+        if (v <= 6) return '比较累';
+        if (v <= 8) return '很累';
+        return '精疲力尽';
+      }
+      var v = el('div', 'range-value', tiredWord(r.value));
+      r.oninput = function () { v.textContent = tiredWord(r.value); };
       fbRow.appendChild(r);
       fbRow.appendChild(v);
       var submit = el('button', 'btn sm', '提交反馈');
@@ -352,7 +360,7 @@
         LMS.store.addLog({ activityId: act.id, predicted: sc.score, observed: observed, at: Date.now(), lowQuality: lowQuality });
         fbWrap.innerHTML = '';
         fbWrap.appendChild(el('div', 'fb-title', '已记录反馈 ✓'));
-        fbWrap.appendChild(el('div', '', lowQuality ? '（本次注意检查未通过，未更新校准）' : '校准与状态指数已更新，推荐会更准。'));
+        fbWrap.appendChild(el('div', '', lowQuality ? '（问卷里的认真度小检查没通过，这次就先不自动调整啦）' : '记下啦！推荐会越来越贴合你。'));
       };
       fbRow.appendChild(submit);
       fbWrap.appendChild(fbRow);
@@ -370,30 +378,31 @@
     // ===== 周负荷看板 =====
     dashboard: function () {
       var app = $app(); app.innerHTML = '';
-      app.appendChild(el('h1', 'page-title', '本周负荷看板'));
+      app.appendChild(el('h1', 'page-title', '本周安排'));
       var p = LMS.store.getPerson() || LMS.store.defaultPerson();
       var plan = LMS.store.getPlan();
       var scored = {};
       DATA.ACTIVITIES.forEach(function (a) { scored[a.id] = LMS.scoreActivity(p, a); });
       var wl = LMS.weeklyLoadPercent(p, plan, scored);
+      var wlv = LMS.levelOfPercent(wl.percent);
 
       var ringCard = el('div', 'card');
       var ringWrap = el('div', 'dash-ring');
-      ringWrap.appendChild(makeRingSVG(wl.percent, wl.zone.color));
+      ringWrap.appendChild(makeRingSVG(wlv.label, wlv.color));
       var meta = el('div', '');
-      meta.innerHTML = '<div style="font-size:14px;color:var(--text-dim)">本周负荷</div>' +
-        '<div style="font-size:32px;font-weight:800;color:' + wl.zone.color + '">' + wl.percent + '%</div>' +
-        '<div style="margin-top:4px"><span class="tag" style="color:' + wl.zone.color + ';border-color:' + wl.zone.color + '">' + wl.zone.label + '</span></div>' +
-        '<div style="margin-top:8px;font-size:12px;color:var(--text-dim)">容量上限：' + wl.capacity + ' 分·小时</div>';
+      meta.innerHTML = '<div style="font-size:14px;color:var(--text-dim)">这周安排得：</div>' +
+        '<div style="font-size:32px;font-weight:800;color:' + wlv.color + '">' + wlv.label + '</div>' +
+        '<div style="margin-top:8px;font-size:12px;color:var(--text-dim)">按你每周能学的时间和休息情况自动估算</div>';
       ringWrap.appendChild(meta);
       ringCard.appendChild(ringWrap);
       app.appendChild(ringCard);
 
       var note = el('div', 'notice');
-      var tip = wl.percent < 70 ? '有余量，可以再加一项活动。' :
-        wl.percent <= 100 ? '负荷正常，保持当前节奏。' :
-        wl.percent <= 110 ? '略偏满，建议适当降载。' :
-        '过载，建议移除或缩短本周负荷最高的一项。';
+      var tip = wl.percent < 40 ? '这周还有大把余量，想加就再加一件事。' :
+        wl.percent < 70 ? '这周比较宽松，可以再加一件事。' :
+        wl.percent <= 100 ? '安排得刚刚好，保持这个节奏。' :
+        wl.percent < 120 ? '有点满了，建议减掉或缩短一件事。' :
+        '太满了，建议先去掉本周最累的一件事，缓一缓。';
       note.textContent = tip;
       app.appendChild(note);
 
@@ -409,7 +418,7 @@
           var act = DATA.ACTIVITIES.filter(function (a) { return a.id === topItem.activityId; })[0];
           if (act) {
             var warn = el('div', 'notice warn');
-            warn.textContent = '本周负荷最高的一项是「' + act.name + '」，建议缩短或移除。';
+            warn.textContent = '本周最累的一项是「' + act.name + '」，建议缩短或移除它。';
             app.appendChild(warn);
           }
         }
@@ -417,20 +426,21 @@
 
       // 计划清单
       var listCard = el('div', 'card');
-      listCard.appendChild(el('h3', '', '本周活动清单（' + plan.length + ' 项）'));
+      listCard.appendChild(el('h3', '', '本周安排清单（' + plan.length + ' 项）'));
       if (plan.length === 0) {
-        listCard.appendChild(el('div', 'notice', '本周还没有计划。去活动库添加吧。'));
+        listCard.appendChild(el('div', 'notice', '本周还没有安排。去活动库添加吧。'));
       } else {
         plan.forEach(function (it) {
           var act = DATA.ACTIVITIES.filter(function (a) { return a.id === it.activityId; })[0];
           if (!act) return;
           var sc = scored[it.activityId];
+          var ilv = LMS.levelOf(sc.score);
           var row = el('div', 'plan-item');
           var dayTxt = it.weekday >= 0 ? WEEKDAYS[it.weekday] : '不限';
           row.innerHTML = '<div class="pi-name">' + esc(act.name) + ' <span class="tag">' + esc(DOMAIN_LABELS[act.domain] || act.domain) + '</span></div>' +
             '<span class="pi-day">' + dayTxt + '</span>' +
             '<div>' + (it.hours || 0) + ' 小时</div>' +
-            '<div class="pi-score" style="color:' + sc.zone.color + '">' + sc.score + ' 分</div>';
+            '<div class="pi-score" style="color:' + ilv.color + '">' + ilv.label + '</div>';
           var rm = el('button', 'btn ghost sm', '删除');
           rm.onclick = function () { LMS.store.removeFromPlan(it.activityId); views.dashboard(); };
           row.appendChild(rm);
@@ -440,7 +450,7 @@
       app.appendChild(listCard);
 
       var cap = el('div', 'notice');
-      cap.innerHTML = '容量 = weeklyHours × 50 × (0.7 + 0.6 × recovery) = ' + LMS.weeklyCapacity(p) + '<br>weekLoad = Σ(score × hours × 同天惩罚) / capacity × 100';
+      cap.textContent = '这个评估会参考你每周能学的时间和休息情况，自动帮你算好，不用自己操心。';
       app.appendChild(cap);
     },
 
@@ -453,18 +463,17 @@
       var logs = LMS.store.getLogs();
       var card = el('div', 'card');
       card.appendChild(el('h3', '', '学习反馈'));
-      card.appendChild(el('div', '', '已学习 <b>' + logs.length + '</b> 次反馈'));
+      card.appendChild(el('div', '', '你已经完成了 <b>' + logs.length + '</b> 次学习反馈'));
       var hasPerson = LMS.store.hasPerson();
       if (hasPerson) {
-        var p = LMS.store.getPerson();
-        card.appendChild(el('div', 'notice', '当前校准：k=' + p.calibration.k + '，b=' + p.calibration.b + ' · 状态指数：' + (p.stateIndex != null ? p.stateIndex : 0.6)));
+        card.appendChild(el('div', 'notice', '系统会根据你的反馈自动微调，用得越多，推荐越懂你。'));
       }
       app.appendChild(card);
 
       // 画像操作
       var opCard = el('div', 'card');
       opCard.appendChild(el('h3', '', '画像管理'));
-      opCard.appendChild(el('p', 'quiz-hint', '每个账号只有一份画像。重新作答会覆盖更新同一份画像，校准与反馈记录会保留。'));
+      opCard.appendChild(el('p', 'quiz-hint', '你只有一份学习画像。重新作答会更新这份画像，之前的反馈记录会保留。'));
       var refill = el('button', 'btn row', '完善我的画像（重新作答）');
       refill.onclick = function () { location.hash = '#/quiz'; };
       opCard.appendChild(refill);
@@ -513,13 +522,13 @@
 
       // 权重高级（6 维含 PL）
       var wCard = el('div', 'card');
-      wCard.appendChild(el('h3', '', '高级：评分权重（6 维，自动归一化）'));
+      wCard.appendChild(el('h3', '', '高级设置：哪些因素对你影响更大'));
       var config = LMS.store.getConfig();
       var weights = config.weights;
       var weightRows = {};
       ['IL', 'EL', 'ML', 'TL', 'SL', 'PL'].forEach(function (k) {
         var row = el('div', 'weight-row');
-        row.appendChild(el('label', '', PART_FULL[k] + ' (' + k + ')'));
+        row.appendChild(el('label', '', PART_FULL[k]));
         var inp = el('input'); inp.type = 'range'; inp.min = 0; inp.max = 1; inp.step = 0.01; inp.value = weights[k] != null ? weights[k] : LMS.WEIGHTS[k];
         var vv = el('span', 'wv', (+inp.value).toFixed(2));
         inp.oninput = function () { vv.textContent = (+inp.value).toFixed(2); normalizeAndSave(); };
@@ -535,11 +544,11 @@
         config.weights = norm;
         LMS.store.setConfig(config);
       }
-      var saveBtn = el('button', 'btn', '保存权重');
+      var saveBtn = el('button', 'btn', '保存调整');
       saveBtn.style.marginTop = '8px';
-      saveBtn.onclick = function () { normalizeAndSave(); saveBtn.textContent = '已保存 ✓'; setTimeout(function () { saveBtn.textContent = '保存权重'; }, 1200); };
+      saveBtn.onclick = function () { normalizeAndSave(); saveBtn.textContent = '已保存 ✓'; setTimeout(function () { saveBtn.textContent = '保存调整'; }, 1200); };
       wCard.appendChild(saveBtn);
-      var resetW = el('button', 'btn ghost sm', '恢复默认权重');
+      var resetW = el('button', 'btn ghost sm', '恢复默认');
       resetW.style.marginLeft = '8px';
       resetW.onclick = function () {
         config.weights = { IL: 0.26, EL: 0.20, ML: 0.18, TL: 0.14, SL: 0.12, PL: 0.10 };
@@ -553,7 +562,7 @@
       var cfgCard = el('div', 'card');
       cfgCard.appendChild(el('h3', '', '提醒与反馈'));
       var fbRow = el('div', 'row');
-      var fbLabel = el('label', '', '开启完成反馈校准：');
+      var fbLabel = el('label', '', '完成学习后记录反馈（让推荐越用越准）：');
       fbLabel.style.flex = '1';
       var fbToggle = el('input'); fbToggle.type = 'checkbox'; fbToggle.checked = !!config.feedbackEnabled;
       fbToggle.onchange = function () { config.feedbackEnabled = fbToggle.checked; LMS.store.setConfig(config); };
@@ -563,27 +572,26 @@
     }
   };
 
-  // ===== 活动卡片（匹配度大字号 + 负荷分小字号 + 匹配度梯度着色） =====
+  // ===== 活动卡片（合适程度 5 级 + 吃力程度 5 级 + 梯度着色） =====
   function makeCard(act, sc) {
     var tone = matchTone(sc.match);
+    var lv = LMS.levelOf(sc.score);
     var card = el('div', 'act-card ' + tone.cls);
     card.onclick = function () { location.hash = '#/activity/' + act.id; };
     card.appendChild(el('div', 'act-name', esc(act.name)));
     card.appendChild(el('div', '', '<span class="tag">' + esc(DOMAIN_LABELS[act.domain] || act.domain) + '</span> ' +
       '<span class="tag match-tag" style="color:' + tone.color + ';border-color:' + tone.color + '">' + tone.label + '</span>'));
     var scoreRow = el('div', 'row');
-    var num = el('span', 'act-match'); num.style.color = tone.color; num.textContent = sc.match;
-    num.appendChild(el('span', 'unit', ' 匹配'));
+    var num = el('span', 'act-match'); num.style.color = tone.color; num.textContent = tone.label;
     scoreRow.appendChild(num);
     scoreRow.appendChild(el('div', 'spacer', ''));
-    scoreRow.appendChild(el('span', 'act-score', sc.score + ' 分 · ' + sc.zone.label));
+    scoreRow.appendChild(el('span', 'act-score', '吃力程度：' + lv.label));
     card.appendChild(scoreRow);
     var bar = el('div', 'zone-bar');
-    var fill = el('div', ''); fill.style.width = sc.score + '%'; fill.style.background = sc.zone.color;
+    var fill = el('div', ''); fill.style.width = sc.score + '%'; fill.style.background = lv.color;
     bar.appendChild(fill); card.appendChild(bar);
     var src = LMS.topContributor(sc.parts);
-    card.appendChild(el('div', 'act-source', '主要：' + src));
-    card.appendChild(el('div', 'act-conf', '置信度 ' + Math.round(sc.confidence * 100) + '%'));
+    card.appendChild(el('div', 'act-source', '最吃力的：' + src));
     return card;
   }
 
@@ -607,9 +615,10 @@
       var act = DATA.ACTIVITIES.filter(function (a) { return a.id === it.activityId; })[0];
       if (!act) return;
       var sc = scoredMap[it.activityId];
+      var ilv = LMS.levelOf(sc.score);
       var row = el('div', 'plan-item');
       var nameDiv = el('div', 'pi-name');
-      nameDiv.innerHTML = esc(act.name) + ' <span class="tag" style="color:' + sc.zone.color + ';border-color:' + sc.zone.color + '">' + sc.score + ' 分</span>';
+      nameDiv.innerHTML = esc(act.name) + ' <span class="tag" style="color:' + ilv.color + ';border-color:' + ilv.color + '">' + ilv.label + '</span>';
       row.appendChild(nameDiv);
       var hInp = el('input'); hInp.type = 'number'; hInp.min = 0.5; hInp.max = 14; hInp.step = 0.5; hInp.value = it.hours;
       hInp.onchange = function () { updateLoad(); };
@@ -633,8 +642,8 @@
     }
     function updateLoad() {
       var wl = LMS.weeklyLoadPercent(p, currentItems(), scoredMap);
-      loadLine.innerHTML = '预计本周负荷：<b style="color:' + wl.zone.color + '">' + wl.percent + '%</b> ' +
-        '<span class="tag" style="color:' + wl.zone.color + ';border-color:' + wl.zone.color + '">' + wl.zone.label + '</span>';
+      var lv = LMS.levelOfPercent(wl.percent);
+      loadLine.innerHTML = '这样安排，这周会：<b style="color:' + lv.color + '">' + lv.label + '</b>';
     }
     updateLoad();
 
@@ -643,7 +652,7 @@
       var items = currentItems();
       if (items.length === 0) { adopt.textContent = '请先填写时长'; setTimeout(function () { adopt.textContent = '采用此计划'; }, 1200); return; }
       LMS.store.setPlan(items);
-      adopt.textContent = '已采用 ✓ 去周负荷看看';
+      adopt.textContent = '已采用 ✓ 去本周安排看看';
       adopt.onclick = function () { location.hash = '#/dashboard'; };
     };
     card.appendChild(adopt);
@@ -652,15 +661,14 @@
     return card;
   }
 
-  // ===== 环 SVG =====
-  function makeRingSVG(percent, color) {
+  // ===== 环 SVG（中心显示 5 级标识文字） =====
+  function makeRingSVG(levelText, color) {
     var r = 50, c = 2 * Math.PI * r;
-    var off = c * (1 - Math.max(0, Math.min(100, percent)) / 100);
     var svg = '<svg width="140" height="140" viewBox="0 0 140 140">' +
       '<circle cx="70" cy="70" r="' + r + '" fill="none" stroke="#30363D" stroke-width="10"/>' +
       '<circle cx="70" cy="70" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="10" stroke-linecap="round" ' +
-      'stroke-dasharray="' + c.toFixed(2) + '" stroke-dashoffset="' + off.toFixed(2) + '" transform="rotate(-90 70 70)"/>' +
-      '<text x="70" y="76" text-anchor="middle" fill="#E6EDF3" font-size="20" font-weight="700">' + Math.round(percent) + '%</text>' +
+      'stroke-dasharray="' + c.toFixed(2) + '" stroke-dashoffset="0" transform="rotate(-90 70 70)"/>' +
+      '<text x="70" y="76" text-anchor="middle" fill="' + color + '" font-size="17" font-weight="700">' + levelText + '</text>' +
       '</svg>';
     var wrap = el('div', ''); wrap.innerHTML = svg;
     return wrap.firstChild;
@@ -671,10 +679,10 @@
     if (document.querySelector('.modal-mask')) return;
     var mask = el('div', 'modal-mask');
     var modal = el('div', 'modal');
-    modal.appendChild(el('h3', '', '快速微问卷（20秒）'));
-    modal.appendChild(el('p', 'quiz-hint', '为了更准地评估「' + act.name + '」'));
+    modal.appendChild(el('h3', '', '快速小问题'));
+    modal.appendChild(el('p', 'quiz-hint', '为了更准确地评估「' + act.name + '」'));
 
-    modal.appendChild(el('div', 'q-text', '你对这个活动的兴趣？'));
+    modal.appendChild(el('div', 'q-text', '你对这件事的兴趣有多大？'));
     var intSel = el('select');
     for (var i = 1; i <= 5; i++) { var op = el('option', ''); op.value = i; op.textContent = i + ' 分'; intSel.appendChild(op); }
     modal.appendChild(intSel);
@@ -717,7 +725,7 @@
     var viewLib = el('button', 'btn', '看看为我推荐的计划');
     viewLib.onclick = function () { location.hash = '#/library'; };
     acts.appendChild(viewLib);
-    var refine = el('button', 'btn secondary', '再答 4 题，让推荐更准（约 90 秒）');
+    var refine = el('button', 'btn secondary', '再答 4 个小问题，让推荐更准');
     refine.onclick = function () { renderExtraStandalone(body, person); };
     acts.appendChild(refine);
     wrap.appendChild(acts);
@@ -725,24 +733,23 @@
 
   function renderExtraStandalone(body, person) {
     body.innerHTML = '';
-    body.appendChild(el('h2', 'quiz-screen-title', '精细化画像（可选）'));
-    body.appendChild(el('p', 'quiz-hint', '以下 4 题仅微调评分权重，约 90 秒。'));
+    body.appendChild(el('h2', 'quiz-screen-title', '让推荐更准（可选）'));
+    body.appendChild(el('p', 'quiz-hint', '下面 4 个小问题帮我们更懂你，大概 1 分半。'));
     var a = { motivation: 0.5, distraction: 0.5, slowTolerance: 0.5, evalAnxiety: 0.5 };
 
     function slider(label, getter, setter) {
       var q = el('div', 'quiz-question');
       q.appendChild(el('div', 'q-text', label));
       var r = el('input'); r.type = 'range'; r.min = 0; r.max = 1; r.step = 0.05; r.value = getter();
-      var v = el('div', 'range-value', getter().toFixed(2));
-      r.oninput = function () { setter(+r.value); v.textContent = (+r.value).toFixed(2); };
-      q.appendChild(r); q.appendChild(v);
+      r.oninput = function () { setter(+r.value); };
+      q.appendChild(r);
       return q;
     }
 
-    body.appendChild(slider('学习动机强度（0=被动 1=主动）', function () { return a.motivation; }, function (v) { a.motivation = v; }));
-    body.appendChild(slider('环境干扰程度（0=安静 1=嘈杂）', function () { return a.distraction; }, function (v) { a.distraction = v; }));
-    body.appendChild(slider('学得慢容忍度（0=急于求成 1=能耐住性子）', function () { return a.slowTolerance; }, function (v) { a.slowTolerance = v; }));
-    body.appendChild(slider('评价焦虑（0=不在意 1=很在意）', function () { return a.evalAnxiety; }, function (v) { a.evalAnxiety = v; }));
+    body.appendChild(slider('你学习的劲头（左=比较被动，右=劲头十足）', function () { return a.motivation; }, function (v) { a.motivation = v; }));
+    body.appendChild(slider('周围环境（左=很安静，右=很吵闹）', function () { return a.distraction; }, function (v) { a.distraction = v; }));
+    body.appendChild(slider('学得慢的时候（左=容易着急，右=能沉住气）', function () { return a.slowTolerance; }, function (v) { a.slowTolerance = v; }));
+    body.appendChild(slider('怕被别人评价（左=不在意，右=很在意）', function () { return a.evalAnxiety; }, function (v) { a.evalAnxiety = v; }));
 
     var done = el('button', 'btn', '应用并返回');
     done.style.marginTop = '12px';

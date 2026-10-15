@@ -160,19 +160,27 @@
       var pct = (state.screen - 1) / (total - 1) * 100;
       if (state.screen === 1) pct = 4;
       var left = state.screen === SCR_RESULT ? '已完成' : '第 ' + state.screen + ' / ' + (total - 1) + ' 屏';
-      var rightTxt = state.screen === SCR_RESULT ? '画像已生成' : '预计还需 ' + this._eta() + ' 秒';
+      var n = this._remainingCount();
+      var rightTxt = state.screen === SCR_RESULT
+        ? '画像已生成'
+        : (n > 0 ? '还剩 ' + n + ' 题没答' : '这一屏都答完了');
       wrap.appendChild(el('div', 'quiz-meta',
         '<span>' + left + '</span>' +
-        '<span id="quiz-eta">' + rightTxt + '</span>'
+        '<span id="quiz-remaining">' + rightTxt + '</span>'
       ));
       var bar = el('div', 'quiz-progress');
       var inner = el('div', ''); inner.style.width = pct + '%';
       bar.appendChild(inner); wrap.appendChild(bar);
     },
 
-    _eta: function () {
-      var remaining = 6 - state.screen; // 每屏约 45 秒
-      return remaining * 45;
+    // 剩余题目数量：从当前屏到最后一屏，累加尚未完成的答题点
+    _remainingCount: function () {
+      var keyMap = { 1: 'baseline', 2: 'channel', 3: 'pace', 4: 'social', 5: 'domains' };
+      var n = 0;
+      for (var s = state.screen; s <= SCR_DOMAINS; s++) {
+        n += this._validateScreen(keyMap[s]).messages.length;
+      }
+      return n;
     },
 
     _renderActions: function (wrap) {
@@ -284,16 +292,23 @@
 
     // ===== 屏 1 基线锚点 =====
     _renderBaseline: function (body) {
-      body.appendChild(el('h2', 'quiz-screen-title', '基线锚点'));
+      body.appendChild(el('h2', 'quiz-screen-title', '先说说你的感受'));
       body.appendChild(el('p', 'quiz-hint', '回忆你最近一次认真学新东西的经历，凭直觉作答就好。'));
 
       var a = state.answers.baseline;
       var q1 = el('div', 'quiz-question'); q1.dataset.qkey = 'baseline-q1';
       q1.appendChild(el('div', 'q-text', '① 学完之后，你感觉有多累？'));
       var r1 = el('input'); r1.type = 'range'; r1.min = 0; r1.max = 10; r1.value = a.q1;
-      var v1 = el('div', 'range-value', a.q1);
+      function tiredWord(v) {
+        if (v <= 2) return '一点也不累';
+        if (v <= 4) return '稍微有点累';
+        if (v <= 6) return '比较累';
+        if (v <= 8) return '很累';
+        return '精疲力尽';
+      }
+      var v1 = el('div', 'range-value', tiredWord(a.q1));
       r1.oninput = function () {
-        a.q1 = +r1.value; v1.textContent = r1.value;
+        a.q1 = +r1.value; v1.textContent = tiredWord(a.q1);
         a.touched.q1 = true; a.answered = a.touched.q1 && a.touched.q2;
         q1.classList.remove('missing');
       };
@@ -305,9 +320,16 @@
       var q2 = el('div', 'quiz-question'); q2.dataset.qkey = 'baseline-q2';
       q2.appendChild(el('div', 'q-text', '② 这个难度对你来说怎么样？'));
       var r2 = el('input'); r2.type = 'range'; r2.min = 0; r2.max = 10; r2.value = a.q2;
-      var v2 = el('div', 'range-value', a.q2);
+      function hardWord(v) {
+        if (v <= 2) return '很吃力';
+        if (v <= 4) return '有点吃力';
+        if (v <= 6) return '还行';
+        if (v <= 8) return '比较轻松';
+        return '很轻松';
+      }
+      var v2 = el('div', 'range-value', hardWord(a.q2));
       r2.oninput = function () {
-        a.q2 = +r2.value; v2.textContent = r2.value;
+        a.q2 = +r2.value; v2.textContent = hardWord(a.q2);
         a.touched.q2 = true; a.answered = a.touched.q1 && a.touched.q2;
         q2.classList.remove('missing');
       };
@@ -319,7 +341,7 @@
 
     // ===== 屏 2 通道偏好 =====
     _renderChannel: function (body) {
-      body.appendChild(el('h2', 'quiz-screen-title', '通道偏好'));
+      body.appendChild(el('h2', 'quiz-screen-title', '你喜欢的学习方式'));
       body.appendChild(el('p', 'quiz-hint', '按「对你更有效」从上到下排序 4 种学习方式（可拖拽或用上下箭头）。'));
 
       var a = state.answers.channel;
@@ -379,7 +401,7 @@
 
     // ===== 屏 3 节奏与结构 =====
     _renderPace: function (body) {
-      body.appendChild(el('h2', 'quiz-screen-title', '节奏与结构'));
+      body.appendChild(el('h2', 'quiz-screen-title', '你的学习习惯'));
       body.appendChild(el('p', 'quiz-hint', '按你的真实习惯选，点选项整行都可以。'));
       var a = state.answers.pace;
 
@@ -433,15 +455,22 @@
       body.appendChild(single('block', '① 你一次大约能高效专注多久？', blockOpts, a.block, function (v) { a.block = v; }));
       body.appendChild(single('stuck', '② 学不下去卡住时，你的第一反应是？', stuckOpts, a.stuck, function (v) { a.stuck = v; }));
       body.appendChild(single('peak', '③ 你一天中脑子最清醒的时段？', peakOpts, a.peakTime, function (v) { a.peakTime = v; }));
-      body.appendChild(single('attention', '④ 注意力检查：本题请选「比较同意」', attOpts, a.attention, function (v) {
+      // 注意力检查：选错不静默惩罚 —— 当场温和提示，选回「比较同意」即恢复
+      var attHint = el('div', 'quiz-att-hint',
+        '小提醒：这题是个认真度小检查。只有选「比较同意」，之后你给的反馈才能帮推荐越调越准。选错了没关系，随时点回去就行。');
+      attHint.style.display = (a.attention != null && a.attention !== 'agree') ? 'block' : 'none';
+      var attQ = single('attention', '④ 注意力检查：本题请选「比较同意」', attOpts, a.attention, function (v) {
         a.attention = v; a.lowQuality = (v !== 'agree');
-      }));
+        attHint.style.display = (v !== 'agree') ? 'block' : 'none';
+      });
+      attQ.appendChild(attHint);
+      body.appendChild(attQ);
       body.appendChild(single('structure', '⑤ 面对新任务，你更希望？', structOpts, a.structureNeed, function (v) { a.structureNeed = v; }));
     },
 
     // ===== 屏 4 社交与资源 =====
     _renderSocial: function (body) {
-      body.appendChild(el('h2', 'quiz-screen-title', '社交与资源'));
+      body.appendChild(el('h2', 'quiz-screen-title', '你的时间和精力'));
       body.appendChild(el('p', 'quiz-hint', '按你的真实情况选，点选项整行都可以。'));
       var a = state.answers.social;
 
@@ -529,7 +558,7 @@
         var wrap = el('div', 'card', '');
         wrap.style.marginTop = '14px';
         var tbl = el('table', 'matrix');
-        tbl.innerHTML = '<thead><tr><th>方向</th><th>经验</th><th>兴趣(1-5)</th></tr></thead>';
+        tbl.innerHTML = '<thead><tr><th>方向</th><th>经验</th><th>兴趣（1-5 分）</th></tr></thead>';
         var tb = el('tbody');
         a.picks.forEach(function (key) {
           var dom = DOMAIN_OPTIONS.filter(function (d) { return d.key === key; })[0];
@@ -581,7 +610,7 @@
       var viewLib = el('button', 'btn', '看看为我推荐的计划');
       viewLib.onclick = function () { if (state.onComplete) state.onComplete(person); };
       acts.appendChild(viewLib);
-      var refine = el('button', 'btn secondary', '再答 4 题，让推荐更准（约 90 秒）');
+      var refine = el('button', 'btn secondary', '再答 4 个小问题，让推荐更准');
       refine.onclick = function () { self._renderExtra(body); };
       acts.appendChild(refine);
       body.appendChild(acts);
@@ -596,30 +625,38 @@
 
       var grid = el('div', 'result-grid');
 
-      // 1. 学习吃力指数
+      // 1. 你的吃力程度（5 级标识，替代分数）
       var b = Math.round(person.baseline);
-      var level = b < 40
-        ? { t: '轻松型', d: '同样的内容，你学起来比大多数人轻松，可以大胆加量。' }
-        : b <= 65
-          ? { t: '适中型', d: '难度适中的内容最适合你，太难的任务我们会帮你拆小。' }
-          : { t: '高敏型', d: '你比较容易累，我们会把任务切得更小、排得更松。' };
+      var lv = global.LMS.levelOf(b);
+      var LV_DESC = {
+        '很轻松': '同样的内容，你学起来比大多数人轻松，可以大胆加量。',
+        '比较轻松': '你学东西挺轻松的，稍微加一点量也没问题。',
+        '刚刚好': '难度适中的内容最适合你，太难的任务我们会帮你拆小。',
+        '有点吃力': '你比较容易累，我们会把任务切得更小、排得更松。',
+        '太吃力': '你很容易累，我们会把任务切得特别小、安排得特别松。'
+      };
       var card1 = el('div', 'card');
-      card1.appendChild(el('div', '', '学习吃力指数'));
-      card1.appendChild(el('div', 'big-number', b + '<span class="unit">分</span>'));
-      card1.appendChild(el('div', '', '<span class="tag">' + level.t + '</span>'));
-      card1.appendChild(el('p', 'quiz-hint', '0 分代表毫不费力，100 分代表非常吃力。' + level.d));
+      card1.appendChild(el('div', '', '你的吃力程度'));
+      card1.appendChild(el('div', 'big-number', '<span style="color:' + lv.color + '">' + lv.label + '</span>'));
+      card1.appendChild(el('p', 'quiz-hint', LV_DESC[lv.label] || ''));
       grid.appendChild(card1);
 
-      // 2. 画像准确度
+      // 2. 画像准确度（5 级标识，替代百分比）
+      var conf = person.confidence != null ? person.confidence : 0.3;
+      var confTone = conf >= 0.85 ? { t: '很准', c: '#3FB950' }
+        : conf >= 0.7 ? { t: '比较准', c: '#39C5BB' }
+        : conf >= 0.5 ? { t: '一般', c: '#D29922' }
+        : conf >= 0.3 ? { t: '还不太准', c: '#F0883E' }
+        : { t: '不太准', c: '#F85149' };
       var card2 = el('div', 'card');
       card2.appendChild(el('div', '', '画像准确度'));
       var ringWrap = el('div', 'confidence-ring');
       ringWrap.appendChild(this._confidenceRingSVG(conf));
       var ringMeta = el('div', '');
-      ringMeta.innerHTML = '<div style="font-size:28px;font-weight:800;">' + Math.round(conf * 100) + '<span style="font-size:12px;color:var(--text-dim)">%</span></div>';
+      ringMeta.innerHTML = '<div style="font-size:24px;font-weight:800;color:' + confTone.c + ';">' + confTone.t + '</div>';
       ringWrap.appendChild(ringMeta);
       card2.appendChild(ringWrap);
-      card2.appendChild(el('p', 'quiz-hint', '作答越完整、完成反馈越多，这个数就越高，推荐也越准。'));
+      card2.appendChild(el('p', 'quiz-hint', '答得越完整、反馈给得越多，画像就越准，推荐也越贴心。'));
       grid.appendChild(card2);
 
       // 3. 最适合你的学习方式
@@ -673,24 +710,23 @@
 
     _renderExtra: function (body) {
       body.innerHTML = '';
-      body.appendChild(el('h2', 'quiz-screen-title', '精细化画像（可选）'));
-      body.appendChild(el('p', 'quiz-hint', '以下 4 题仅微调评分权重，约 90 秒。'));
+      body.appendChild(el('h2', 'quiz-screen-title', '让推荐更准（可选）'));
+      body.appendChild(el('p', 'quiz-hint', '再回答 4 个小问题，让推荐更贴合你。拖一拖滑块就行。'));
       var a = state.answers.extra;
 
       function slider(label, getter, setter) {
         var q = el('div', 'quiz-question');
         q.appendChild(el('div', 'q-text', label));
         var r = el('input'); r.type = 'range'; r.min = 0; r.max = 1; r.step = 0.05; r.value = getter();
-        var v = el('div', 'range-value', getter().toFixed(2));
-        r.oninput = function () { setter(+r.value); v.textContent = r.value; a.answered = true; };
-        q.appendChild(r); q.appendChild(v);
+        r.oninput = function () { setter(+r.value); a.answered = true; };
+        q.appendChild(r);
         return q;
       }
 
-      body.appendChild(slider('学习动机强度（0=被动 1=主动）', function () { return a.motivation; }, function (v) { a.motivation = v; }));
-      body.appendChild(slider('环境干扰程度（0=安静 1=嘈杂）', function () { return a.distraction; }, function (v) { a.distraction = v; }));
-      body.appendChild(slider('学得慢容忍度（0=急于求成 1=能耐住性子）', function () { return a.slowTolerance; }, function (v) { a.slowTolerance = v; }));
-      body.appendChild(slider('评价焦虑（0=不在意 1=很在意）', function () { return a.evalAnxiety; }, function (v) { a.evalAnxiety = v; }));
+      body.appendChild(slider('你想学东西的劲头（左=不太想学，右=特别想学）', function () { return a.motivation; }, function (v) { a.motivation = v; }));
+      body.appendChild(slider('你周围的环境（左=很安静，右=很吵闹）', function () { return a.distraction; }, function (v) { a.distraction = v; }));
+      body.appendChild(slider('学得慢的时候你（左=会着急，右=不着急）', function () { return a.slowTolerance; }, function (v) { a.slowTolerance = v; }));
+      body.appendChild(slider('要给别人看学习成果时（左=不在意，右=很紧张）', function () { return a.evalAnxiety; }, function (v) { a.evalAnxiety = v; }));
 
       var done = el('button', 'btn', '应用并返回');
       done.style.marginTop = '12px';
