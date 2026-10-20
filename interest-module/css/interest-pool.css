@@ -1,0 +1,161 @@
+/* =========================================================================
+   兴趣池样式 —— 主应用（index.html）与预览页（interest-pool-preview.html）共用
+   依赖主应用的 :root 变量：--card / --line / --muted / --brand / --brand-d /
+   --ok / --warn / --shadow / --radius
+   ========================================================================= */
+
+.ip-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.ip-grid{grid-template-columns:1fr}}
+.ip-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px}
+.ip-card h3{font-size:1rem;margin-bottom:8px}
+.ip-card h4{font-size:.92rem;margin-bottom:10px;color:var(--brand-d)}
+.ip-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.ip-card-head h3{margin-bottom:8px}
+.ip-card-head .muted{font-size:.82rem;color:var(--muted);white-space:nowrap}
+.ip-hint{font-size:.82rem;color:var(--muted);line-height:1.6;margin-bottom:10px}
+.ip-editor{position:relative}
+.ip-editor textarea{width:100%;resize:vertical;font-family:inherit;line-height:1.6}
+.ip-suggest{position:absolute;left:0;right:0;top:100%;z-index:60;margin-top:4px;background:#fff;
+  border:1px solid var(--brand);border-radius:10px;max-height:230px;overflow:auto;box-shadow:0 12px 30px rgba(20,30,60,.16)}
+.ip-suggest[hidden]{display:none}
+.ip-sug-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 12px;cursor:pointer;font-size:.9rem}
+.ip-sug-item:hover,.ip-sug-item.active{background:#eef1fb}
+.ip-sug-term{font-weight:600}
+.ip-sug-cat{font-size:.76rem;color:var(--muted);border:1px solid var(--line);border-radius:20px;padding:1px 9px;white-space:nowrap}
+.ip-results{margin-top:14px}
+.ip-item{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fbfcfe}
+.ip-item-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:5px}
+.ip-name{font-weight:700}
+.ip-badge{font-size:.72rem;font-weight:600;color:var(--ok);background:#e8f7ee;border-radius:20px;padding:2px 9px;white-space:nowrap}
+.ip-badge.gray{color:var(--muted);background:#eef1f5}
+.ip-badge.warn{color:#8a5a00;background:#fdf3e2}
+.ip-item-meta{font-size:.82rem;color:var(--muted);line-height:1.6}
+.ip-item-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.ip-tag{display:inline-block;font-size:.72rem;border:1px solid var(--line);border-radius:20px;padding:1px 8px;margin-left:4px;background:#fff}
+.ip-toolbar{display:flex;gap:8px;margin-bottom:12px}
+.ip-toolbar .input{padding:9px 12px}
+.ip-toolbar select{max-width:130px}
+.ip-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px dashed var(--line)}
+.ip-row:last-child{border-bottom:none}
+.ip-row-main{flex:1;min-width:0}
+.ip-row-name{font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ip-row-meta{font-size:.78rem;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+.ip-row-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.ip-empty{padding:28px 10px;text-align:center;color:var(--muted);font-size:.88rem;line-height:1.7}
+/* 主流程说明：写清「输入兴趣 → 存进兴趣池 → 生成计划」这一条路怎么走 */
+.ip-flow{background:#eef1fb;color:var(--brand-d);border-radius:10px;padding:10px 14px;
+  font-size:.85rem;line-height:1.7;margin-bottom:16px}
+.ip-flow b{font-weight:700}
+/* 删除是不可逆的，按钮上要有可辨认的警示色 */
+.btn.ghost.danger{background:#fdeaea;color:#c0392b}
+.btn.ghost.danger:hover{background:#fbdada}
+.ip-notice{display:none;margin-bottom:14px;padding:11px 14px;border-radius:10px;font-size:.86rem;line-height:1.6}
+.ip-notice.show{display:block;background:#eef1fb;color:var(--brand-d)}
+.ip-notice.ok{background:#e8f7ee;color:#0f6b34}
+.ip-notice.warn{background:#fdf3e2;color:#8a5a00}
+.ip-plan-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:6px}
+.ip-close{border:1px solid var(--line);border-radius:20px;padding:5px 13px;font-size:.8rem;color:var(--muted);background:#fff}
+.ip-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 8px}
+.ip-tab{border:1px solid var(--line);border-radius:20px;padding:7px 16px;font-size:.85rem;color:var(--muted);background:#fff;font-weight:600}
+.ip-tab.active{background:var(--brand);border-color:var(--brand);color:#fff}
+.ip-block{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
+.ip-kv{display:flex;gap:12px;font-size:.86rem;padding:5px 0;line-height:1.6}
+.ip-kv span{color:var(--muted);flex:0 0 96px}
+.ip-kv b{font-weight:600}
+.ip-steps{list-style:none;padding:0}
+.ip-step{background:#fbfcfe;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.ip-step-line{display:flex;align-items:center;gap:9px;margin-bottom:5px}
+.ip-step-no{flex:0 0 22px;height:22px;border-radius:50%;background:var(--brand);color:#fff;font-size:.75rem;font-weight:700;display:flex;align-items:center;justify-content:center}
+.ip-step-title{font-weight:700;font-size:.92rem}
+.ip-step-detail{font-size:.85rem;line-height:1.65;color:#33415a}
+.ip-step-foot{font-size:.76rem;color:var(--muted);margin-top:6px;line-height:1.6}
+.ip-res{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:.85rem;padding:6px 0}
+.ip-res-kind{flex:0 0 76px;color:var(--muted);font-size:.78rem}
+.ip-res-name{font-weight:600}
+.ip-res-note{color:var(--muted);font-size:.78rem}
+.ip-res.need .ip-res-name{color:#8a5a00}
+.ip-list{font-size:.86rem;line-height:1.75;padding-left:20px}
+.ip-plan-foot{display:flex;flex-wrap:wrap;align-items:center;gap:10px;border-top:1px solid var(--line);padding-top:16px;margin-top:16px}
+.ip-select{max-width:150px}
+
+/* ===== 计划编辑 ===== */
+.ep-banner{margin:10px 0;padding:11px 14px;border-radius:10px;font-size:.85rem;line-height:1.7;
+  background:#eef1fb;color:var(--brand-d);display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+/* .ep-banner 自己设了 display，会盖掉 [hidden] 的浏览器默认隐藏，这里必须显式补一条 */
+.ep-banner[hidden]{display:none}
+.ep-banner.warn{background:#fdf3e2;color:#8a5a00}
+.ep-banner.plain{background:#f5f6f8;color:var(--muted)}
+.ep-banner b{font-weight:700}
+.ep-block-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.ep-inline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.86rem;color:var(--muted);margin:8px 0}
+.ep-inline .input{margin:0}
+.ep-label{display:block;font-size:.82rem;color:var(--muted);margin:10px 0 0}
+.ep-label .input,.ep-grid2 .input,.ep-grid3 .input{margin-top:5px;width:100%}
+.ep-w-auto{max-width:170px}
+.ep-w-num{max-width:110px}
+.ep-grow{flex:1;min-width:0}
+.ep-grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+.ep-grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:10px}
+@media(max-width:640px){.ep-grid2,.ep-grid3{grid-template-columns:1fr}}
+.ep-grid2 label,.ep-grid3 label{font-size:.82rem;color:var(--muted);display:block}
+
+.ep-step{background:#fbfcfe;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.ep-step-head{display:flex;align-items:center;gap:9px}
+.ep-step-head .input{margin:0}
+.ep-tools{display:flex;gap:4px;flex:0 0 auto}
+.ep-icon{width:28px;height:28px;border:1px solid var(--line);border-radius:8px;background:#fff;
+  color:var(--muted);font-size:.9rem;line-height:1;font-weight:700}
+.ep-icon:hover:not([disabled]){border-color:var(--brand);color:var(--brand-d)}
+.ep-icon.danger:hover:not([disabled]){border-color:#c0392b;color:#c0392b}
+.ep-icon[disabled]{opacity:.45;cursor:not-allowed}
+.ep-step textarea.input{margin-top:8px;resize:vertical;font-family:inherit;line-height:1.6}
+.ep-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+
+.ep-ver{border:1px solid var(--line);border-radius:12px;padding:11px 14px;margin-bottom:10px;background:#fbfcfe}
+.ep-ver.current{border-color:var(--brand);background:#f2f4fc}
+.ep-ver-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:.88rem}
+.ep-ver-meta{font-size:.78rem;color:var(--muted);margin-left:auto}
+.ep-ver-list{margin:7px 0 0}
+.ep-ver .btn{margin-top:9px}
+
+.ep-conflict{border:1px solid #e6c9a0;background:#fdfaf4;border-radius:12px;padding:14px 16px;margin-top:14px}
+.ep-conflict h4{color:#8a5a00}
+.ep-cf{border:1px solid var(--line);border-radius:10px;background:#fff;padding:11px 13px;margin-bottom:10px}
+.ep-cf-label{font-weight:700;font-size:.88rem;margin-bottom:8px}
+.ep-cf-opt{display:flex;align-items:flex-start;gap:9px;padding:8px 10px;border:1px solid var(--line);
+  border-radius:9px;margin-bottom:7px;font-size:.85rem;cursor:pointer;line-height:1.6}
+.ep-cf-opt.picked{border-color:var(--brand);background:#f2f4fc}
+.ep-cf-opt input{margin-top:3px;flex:0 0 auto}
+.ep-cf-opt span{flex:0 0 68px;color:var(--muted);font-size:.8rem}
+.ep-cf-opt b{font-weight:600;overflow-wrap:anywhere}
+.ep-cf-base{font-size:.77rem;color:var(--muted);margin-top:4px}
+
+/* 左栏改、右栏实时预览：两栏同源，改一个字右边就跟着变 */
+.ep-split{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:22px;align-items:start}
+@media(max-width:1000px){.ep-split{grid-template-columns:1fr}}
+.ep-col{min-width:0}
+.ep-col-pv{background:#f8f9fc;border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+  position:sticky;top:12px;max-height:calc(100vh - 40px);overflow:auto}
+@media(max-width:1000px){.ep-col-pv{position:static;max-height:none}}
+.ep-pv-head{display:flex;align-items:center;gap:8px;font-weight:700;font-size:.92rem;
+  color:var(--brand-d);margin-bottom:6px}
+.ep-tab-note{font-size:.8rem;color:var(--muted);align-self:center;margin-left:6px}
+.ep-pv{font-size:.86rem;line-height:1.65}
+.ep-pv-title{font-weight:700;font-size:1rem;margin-bottom:2px}
+.ep-pv-sub{font-size:.78rem;color:var(--muted);margin-bottom:10px}
+.ep-pv h5{font-size:.84rem;color:var(--brand-d);margin:13px 0 6px}
+.ep-pv-row{display:flex;gap:10px;padding:3px 0}
+.ep-pv-row span{flex:0 0 72px;color:var(--muted);font-size:.78rem;padding-top:1px}
+.ep-pv-row b{font-weight:600;overflow-wrap:anywhere}
+.ep-pv-note{font-size:.78rem;color:var(--muted);background:#fff;border-left:3px solid var(--brand);
+  border-radius:0 6px 6px 0;padding:6px 9px;margin-top:6px}
+.ep-pv-steps{list-style:none;padding:0}
+.ep-pv-step{border:1px solid var(--line);border-radius:9px;background:#fff;padding:9px 11px;margin-bottom:7px}
+.ep-pv-step-line{display:flex;align-items:center;gap:8px}
+.ep-pv-step-line b{font-size:.86rem}
+.ep-pv-pri{font-size:.72rem;color:var(--muted);border:1px solid var(--line);border-radius:20px;
+  padding:1px 8px;margin-left:auto;white-space:nowrap}
+.ep-pv-detail{font-size:.8rem;color:#33415a;margin-top:4px;line-height:1.6}
+.ep-pv-foot{font-size:.74rem;color:var(--muted);margin-top:5px;line-height:1.6}
+.ep-pv-list{font-size:.82rem;line-height:1.7;padding-left:18px}
+

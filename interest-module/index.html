@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>时间管理</title>
+<style>
+  :root{
+    --bg:#f4f6fb; --card:#fff; --ink:#1f2733; --muted:#6b7480; --line:#e6eaf0;
+    --brand:#4f6df5; --brand-d:#3b56d8; --ok:#16a34a; --warn:#f59e0b; --danger:#dc2626;
+    --shadow:0 4px 18px rgba(20,30,60,.08); --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+  button{cursor:pointer;font-family:inherit;border:none;background:none;color:inherit}
+  input,select,textarea{font-family:inherit;font-size:1rem}
+  a{color:var(--brand);text-decoration:none}
+  .wrap{max-width:1100px;margin:0 auto;padding:0 16px}
+
+  /* ===== Login ===== */
+  #auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .auth-card{background:var(--card);border-radius:20px;box-shadow:var(--shadow);padding:34px 28px;width:100%;max-width:400px}
+  .auth-card h1{font-size:1.5rem;text-align:center;margin-bottom:6px}
+  .auth-card .sub{color:var(--muted);text-align:center;margin-bottom:24px;font-size:.92rem}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:.82rem;color:var(--muted);margin-bottom:6px}
+  .input{width:100%;padding:12px 14px;border:1.5px solid var(--line);border-radius:10px;outline:none;transition:.15s;background:#fff}
+  .input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(79,109,245,.12)}
+  .row{display:flex;gap:10px}
+  .row .input{flex:1}
+  .btn{padding:12px 16px;border-radius:10px;background:var(--brand);color:#fff;font-weight:600;transition:.15s}
+  .btn:hover{background:var(--brand-d)}
+  .btn.ghost{background:#eef1fb;color:var(--brand)}
+  .btn.ghost:hover{background:#e1e6fa}
+  .btn.block{width:100%}
+  .btn.sm{padding:8px 12px;font-size:.85rem}
+  .hint{font-size:.8rem;color:var(--muted);margin-top:10px;text-align:center}
+  .code-box{background:#f0f4ff;border:1px dashed var(--brand);border-radius:8px;padding:8px;text-align:center;font-size:.82rem;color:var(--brand-d);margin:-4px 0 14px}
+
+  /* ===== App Shell ===== */
+  #app{display:none}
+  .topbar{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:40}
+  .topbar .wrap{display:flex;align-items:center;gap:14px;height:60px}
+  .topbar .brand{font-weight:700;font-size:1.1rem}
+  .nav{display:flex;gap:4px;flex:1}
+  .nav button{padding:8px 14px;border-radius:8px;color:var(--muted);font-weight:500;font-size:.92rem}
+  .nav button.active{background:#eef1fb;color:var(--brand)}
+  .user-area{display:flex;align-items:center;gap:8px}
+  .avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--brand),#7c9bff);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:.9rem}
+  .uname{font-size:.9rem;font-weight:500}
+  .logout{font-size:.8rem;color:var(--muted)}
+
+  /* reminder banner */
+  #reminder{display:none;background:linear-gradient(90deg,#f59e0b,#f97316);color:#fff;padding:14px 16px;position:sticky;top:60px;z-index:35;box-shadow:0 2px 10px rgba(245,158,11,.3)}
+  #reminder.show{display:block}
+  #reminder .wrap{display:flex;align-items:center;gap:12px}
+  #reminder .bell{font-size:1.4rem;animation:ring 1s ease-in-out infinite}
+  @keyframes ring{0%,100%{transform:rotate(0)}25%{transform:rotate(-15deg)}75%{transform:rotate(15deg)}}
+  #reminder .txt{flex:1;font-weight:600}
+  #reminder .close{color:#fff;opacity:.85;font-size:1.2rem;padding:4px 8px}
+
+  .page{padding:22px 0 60px}
+  .page-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px}
+  .page-head h2{font-size:1.3rem}
+  .muted{color:var(--muted);font-size:.85rem}
+
+  /* timeline */
+  .timeline{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-bottom:18px;overflow-x:auto}
+  .tl-title{font-size:.8rem;color:var(--muted);margin-bottom:10px}
+  .tl-track{display:flex;gap:6px;min-width:max-content}
+  .day-col{flex:0 0 124px;display:flex;flex-direction:column}
+  .time-gutter{flex:0 0 40px}
+  .day-head{text-align:center;padding:6px 4px;border-radius:8px 8px 0 0;background:#f3f6fc;font-size:.76rem;font-weight:600;line-height:1.25;min-height:38px;display:flex;flex-direction:column;justify-content:center}
+  .day-head .wd{font-size:.66rem;color:var(--muted);font-weight:500}
+  .day-head.today{background:var(--brand);color:#fff}
+  .day-head.today .wd{color:#dfe7ff}
+  .gh{min-height:38px}
+  .day-body{position:relative;height:576px;background:linear-gradient(#fbfcfe,#eef2f8);border:1px solid var(--line);border-top:none}
+  .time-gutter .day-body{background:transparent;border:none}
+  .wk-hour{position:absolute;left:0;right:0;border-top:1px dashed rgba(0,0,0,.08)}
+  .tg-hour{position:absolute;right:3px;font-size:.56rem;color:var(--muted);transform:translateY(-50%);white-space:nowrap}
+  .wk-item{position:absolute;border-radius:5px;padding:3px 5px;color:#fff;font-size:.64rem;font-weight:600;overflow:hidden;cursor:default;box-shadow:0 1px 3px rgba(0,0,0,.18);line-height:1.2}
+  .wk-empty{position:absolute;top:6px;left:0;right:0;text-align:center;font-size:.64rem;color:var(--muted)}
+
+  /* toolbar */
+  .toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .seg{display:inline-flex;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:3px}
+  .seg button{padding:7px 16px;border-radius:7px;font-size:.88rem;color:var(--muted);font-weight:500}
+  .seg button.active{background:var(--brand);color:#fff}
+  .date-nav{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:4px}
+  .date-nav button{padding:6px 10px;border-radius:6px;color:var(--muted);font-size:.9rem}
+  .date-nav .d{font-weight:600;font-size:.92rem;min-width:120px;text-align:center}
+  .btn-icon{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:8px;background:var(--card);border:1px solid var(--line);color:var(--muted)}
+
+  /* table */
+  .table-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;overflow-x:auto}
+  table{width:100%;border-collapse:collapse;min-width:560px}
+  thead th{background:#f7f9fc;text-align:left;padding:12px 14px;font-size:.8rem;color:var(--muted);font-weight:600;border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody td{padding:12px 14px;border-bottom:1px solid var(--line);font-size:.9rem;vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  .proj-tag{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;font-size:.82rem;font-weight:600}
+  .dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .time-cell{font-weight:600;white-space:nowrap}
+  .desc-cell{color:#475}
+  .empty{padding:40px;text-align:center;color:var(--muted)}
+  .del{color:var(--danger);font-size:.82rem}
+  .del:hover{text-decoration:underline}
+
+  /* 简洁模式 - 色块 + 时间排版 */
+  #simpleTable td{vertical-align:middle}
+  #simpleTable .blk{display:flex;align-items:center;gap:8px;padding:12px 18px;border-radius:10px;color:#fff;font-weight:600;font-size:.95rem;cursor:pointer;transition:transform .15s,filter .15s,box-shadow .15s;box-shadow:0 2px 6px rgba(0,0,0,.12);min-width:140px;width:fit-content}
+  #simpleTable .blk:hover{filter:brightness(1.1);transform:translateY(-1px);box-shadow:0 5px 14px rgba(0,0,0,.2)}
+  #simpleTable .blk .bar{width:4px;height:18px;border-radius:2px;background:rgba(255,255,255,.75);flex:none}
+  .t-start{font-size:1.02rem;font-weight:700;white-space:nowrap;letter-spacing:.5px}
+  .t-dur{font-size:.72rem;color:var(--muted);margin-top:3px}
+
+  /* 详情浮窗 */
+  .modal{position:fixed;inset:0;z-index:80;display:none;align-items:center;justify-content:center;padding:20px}
+  .modal.show{display:flex}
+  .modal-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+  .modal-card{position:relative;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.25);padding:30px 26px 24px;width:100%;max-width:440px;animation:pop .18s ease}
+  @keyframes pop{from{transform:scale(.92);opacity:0}to{transform:scale(1);opacity:1}}
+  .modal-close{position:absolute;top:10px;right:10px;font-size:1.15rem;color:var(--muted);width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:.15s}
+  .modal-close:hover{background:#f1f5f9;color:var(--ink)}
+  .modal-row{margin-bottom:16px}
+  .modal-row:last-child{margin-bottom:0}
+  .modal-row .k{font-size:.78rem;color:var(--muted);margin-bottom:5px}
+  .modal-row .v{font-size:1rem;font-weight:600;line-height:1.5}
+  .modal-proj{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:20px;font-weight:700;font-size:1rem}
+  @media(max-width:640px){
+    .modal-card{padding:24px 18px 18px}
+    #simpleTable .blk{min-width:auto;width:100%}
+  }
+
+  /* 占位页 */
+  .placeholder-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:48px 24px;text-align:center;max-width:520px;margin:0 auto}
+  .placeholder-card .ph-icon{font-size:3rem;margin-bottom:10px}
+  .placeholder-card h3{margin-bottom:10px}
+  .placeholder-card p{color:var(--muted);font-size:.92rem;margin-bottom:6px}
+  .placeholder-card .ph-hook{font-size:.82rem;color:var(--brand)}
+
+  /* 负荷管理系统全屏浮窗 */
+  .lm-modal{position:fixed;inset:0;z-index:90;display:none;flex-direction:column;background:#0D1117}
+  .lm-modal.show{display:flex}
+  .lm-modal-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#161B22;border-bottom:1px solid #30363D;flex:none}
+  .lm-modal-bar .lm-title{color:#E6EDF3;font-weight:700;font-size:.95rem}
+  .lm-actions{display:flex;gap:8px}
+  .lm-link,.lm-close{padding:6px 12px;border-radius:8px;font-size:.82rem;cursor:pointer;border:1px solid #30363D;background:#21262D;color:#E6EDF3}
+  .lm-link:hover,.lm-close:hover{background:#30363D}
+  .lm-body{position:relative;flex:1;overflow:hidden}
+  .lm-body iframe{position:absolute;inset:0;width:100%;height:100%;border:none;background:#0D1117}
+  .lm-fallback{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0D1117;color:#8B949E}
+  .lm-fallback.hide{display:none}
+
+  /* 日负荷等级徽标 */
+  .day-load-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:.8rem;font-weight:600;margin-left:8px}
+  .day-load-badge .pip{width:8px;height:8px;border-radius:50%}
+
+  /* form */
+  .form-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:24px;max-width:640px;margin:0 auto}
+  .form-card h3{margin-bottom:18px}
+  .free-box{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;margin-bottom:20px}
+  .free-box h4{font-size:.88rem;color:#15803d;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+  .free-list{display:flex;flex-wrap:wrap;gap:8px}
+  .free-chip{background:#fff;border:1px solid #bbf7d0;color:#15803d;padding:4px 12px;border-radius:20px;font-size:.8rem;font-weight:600}
+  .free-empty{font-size:.82rem;color:#16a34a}
+
+  /* admin */
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px}
+  .stat{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px}
+  .stat .v{font-size:1.8rem;font-weight:700;color:var(--brand)}
+  .stat .k{color:var(--muted);font-size:.82rem;margin-top:2px}
+  .role-tag{font-size:.72rem;padding:2px 8px;border-radius:6px;font-weight:600}
+  .role-admin{background:#fee2e2;color:#b91c1c}
+  .role-user{background:#e0e7ff;color:#3730a3}
+
+  @media(max-width:640px){
+    .nav{order:3;width:100%;overflow-x:auto}
+    .topbar .wrap{flex-wrap:wrap;height:auto;padding:10px 14px}
+    .uname{display:none}
+    .page-head h2{font-size:1.1rem}
+  }
+  .ip-select{max-width:150px}
+  </style>
+  <link rel="stylesheet" href="css/interest-pool.css">
+</head>
+<body>
+
+<!-- ===== Auth ===== -->
+<section id="auth">
+  <div class="auth-card">
+    <h1>时间管理</h1>
+    <div class="sub">手机号验证码登录</div>
+    <div class="field">
+      <label>手机号</label>
+      <input id="loginPhone" class="input" inputmode="numeric" maxlength="11" placeholder="请输入11位手机号">
+    </div>
+    <div class="field">
+      <label>验证码</label>
+      <div class="row">
+        <input id="loginCode" class="input" inputmode="numeric" maxlength="6" placeholder="6位验证码">
+        <button id="sendCode" class="btn ghost">获取验证码</button>
+      </div>
+      <div class="code-box" id="codeBox" style="display:none"></div>
+    </div>
+    <button id="loginBtn" class="btn block">登录</button>
+    <div class="hint">演示:任意手机号可用验证码 <b>123456</b> 登录<br>管理员账号:<b>13800000000</b></div>
+  </div>
+</section>
+
+<!-- ===== App ===== -->
+<div id="app">
+  <header class="topbar">
+    <div class="wrap">
+      <div class="brand">时间管理</div>
+      <nav class="nav">
+        <button data-tab="schedule" class="active">安排表</button>
+        <button data-tab="add">新增事项</button>
+        <button data-tab="admin" id="adminTab" style="display:none">后台统计</button>
+        <button data-tab="load">负荷管理系统</button>
+        <button data-tab="interest">兴趣池</button>
+        <button data-tab="social">社交功能</button>
+      </nav>
+      <div class="user-area">
+        <div class="avatar" id="avatar">U</div>
+        <span class="uname" id="userName">用户</span>
+        <button class="logout" id="logoutBtn">退出</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="reminder">
+    <div class="wrap">
+      <span class="bell">🔔</span>
+      <span class="txt" id="reminderText"></span>
+      <button class="close" id="reminderClose">✕</button>
+    </div>
+  </div>
+
+  <main class="wrap">
+    <!-- Schedule page -->
+    <section id="page-schedule" class="page">
+      <div class="page-head">
+        <h2>时间安排表</h2>
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px">
+          <span class="muted" id="todayLabel"></span>
+          <span class="day-load-badge" id="dayLoadBadge" style="display:none"></span>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="date-nav">
+          <button id="prevDay">‹</button>
+          <span class="d" id="dateLabel"></span>
+          <button id="nextDay">›</button>
+        </div>
+        <button class="btn-icon" id="todayBtn">今天</button>
+        <div class="seg">
+          <button id="modeSimple" class="active">简洁模式</button>
+          <button id="modeDetail">详情模式</button>
+        </div>
+      </div>
+      <div class="timeline">
+        <div class="tl-title">未来7天时间安排</div>
+        <div class="tl-track" id="tlTrack"></div>
+      </div>
+      <div class="table-card" id="simpleView">
+        <table id="simpleTable"></table>
+      </div>
+      <div class="table-card" id="detailView" style="display:none">
+        <table id="detailTable"></table>
+      </div>
+
+      <!-- 事项详情浮窗 -->
+      <div class="modal" id="itemModal">
+        <div class="modal-backdrop" id="modalBackdrop"></div>
+        <div class="modal-card">
+          <button class="modal-close" id="modalClose" aria-label="关闭">✕</button>
+          <div id="modalContent"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Add page -->
+    <section id="page-add" class="page" style="display:none">
+      <div class="page-head"><h2>新增事项</h2></div>
+      <div class="form-card">
+        <h3>录入安排</h3>
+        <div class="free-box">
+          <h4>🕐 当前空闲时间段</h4>
+          <div id="freeList"></div>
+        </div>
+        <div class="field">
+          <label>项目名称</label>
+          <input id="fProject" class="input" placeholder="如:产品评审 / 健身 / 学习">
+        </div>
+        <div class="field">
+          <label>事项明细描述</label>
+          <textarea id="fDesc" class="input" rows="3" placeholder="描述具体事项内容"></textarea>
+        </div>
+        <div class="field">
+          <label>日期</label>
+          <input type="date" id="fDate" class="input">
+        </div>
+        <div class="row">
+          <div class="field" style="flex:1">
+            <label>开始时间</label>
+            <input type="time" id="fStart" class="input">
+          </div>
+          <div class="field" style="flex:1">
+            <label>结束时间</label>
+            <input type="time" id="fEnd" class="input">
+          </div>
+        </div>
+        <button id="saveItemBtn" class="btn block">保存事项</button>
+      </div>
+    </section>
+
+    <!-- Admin page -->
+    <section id="page-admin" class="page" style="display:none">
+      <div class="page-head"><h2>后台统计</h2><span class="muted">平台运营数据</span></div>
+      <div class="stat-grid">
+        <div class="stat"><div class="v" id="statUsers">0</div><div class="k">总用户数</div></div>
+        <div class="stat"><div class="v" id="statItems">0</div><div class="k">总事项数</div></div>
+        <div class="stat"><div class="v" id="statToday">0</div><div class="k">今日事项</div></div>
+      </div>
+      <div class="table-card">
+        <table id="userTable"></table>
+      </div>
+    </section>
+
+    <!-- 兴趣池：录入 -> 识别归类 -> 存取 -> 生成可执行计划 -->
+    <section id="page-interest" class="page" style="display:none">
+      <div class="page-head">
+        <h2>兴趣池</h2>
+        <span class="muted" id="ipCount"></span>
+      </div>
+
+      <div id="ipNotice" class="ip-notice"></div>
+
+      <p class="ip-flow"><b>怎么用：</b>左边写下兴趣 → 点「识别并归类」 → 加入兴趣池 →
+        在右边「我的兴趣池」里点「生成计划」，就会得到一套可以直接照着做的计划。</p>
+
+      <div class="ip-grid">
+        <div class="ip-card">
+          <h3>录入兴趣</h3>
+          <p class="ip-hint">一行写一个。输入时会提示相关兴趣，点一下就能填进去。</p>
+          <div class="ip-editor">
+            <textarea id="ipInput" class="input" rows="6" placeholder="例如：&#10;学钢琴&#10;用 App 学日语&#10;周末爬山健身&#10;读一本认知科学书"></textarea>
+            <div id="ipSuggest" class="ip-suggest" hidden></div>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <button class="btn sm" id="ipClassify">识别并归类</button>
+            <button class="btn ghost sm" id="ipExample">填入示例</button>
+            <button class="btn ghost sm" id="ipClearInput">清空</button>
+          </div>
+          <div id="ipResults" class="ip-results"></div>
+        </div>
+
+        <div class="ip-card">
+          <h3>我的兴趣池</h3>
+          <div class="ip-toolbar">
+            <input id="ipSearch" class="input" placeholder="搜索兴趣">
+            <select id="ipFilter" class="input"></select>
+          </div>
+          <div id="ipList"></div>
+          <p class="ip-hint" id="ipStorageHint"></p>
+        </div>
+      </div>
+
+      <div id="ipPlan" style="margin-top:16px"></div>
+
+      <div class="ip-card" style="margin-top:16px">
+        <div class="ip-card-head">
+          <h3>已经保存的计划</h3>
+          <span class="muted" id="ipSavedCount"></span>
+        </div>
+        <p class="ip-hint">采用过的计划都在这里，随时可以改：换内容、调顺序、改时间、改优先级。每次保存都会留下一条变更记录，改错了能退回上一版。</p>
+        <p class="ip-hint">「删除」删掉的是这份计划本身（包括它的变更记录），删了不能恢复。兴趣池里的兴趣、以及「本周负荷计划」都不会因此被改动。</p>
+        <div id="ipSavedPlans"></div>
+      </div>
+
+      <div id="ipEditor" style="margin-top:16px"></div>
+    </section>
+
+    <!-- 社交功能(占位,内容待开发) -->
+    <section id="page-social" class="page" style="display:none">
+      <div class="page-head"><h2>社交功能</h2><span class="muted">制作中</span></div>
+      <div class="placeholder-card">
+        <div class="ph-icon">💬</div>
+        <h3>社交功能</h3>
+        <p>这个功能还在制作中，做好后就能用了。</p>
+        <p class="ph-hook">做好后会和「兴趣池」「计划时间表」「负荷管理系统」一起配合使用。</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- 负荷管理系统浮窗(全屏覆盖,内嵌 load-manager 应用) -->
+<div class="lm-modal" id="lmModal">
+  <div class="lm-modal-bar">
+    <span class="lm-title">负荷管理系统</span>
+    <div class="lm-actions">
+      <button class="lm-link" id="lmOpenTab">在新标签打开 ↗</button>
+      <button class="lm-close" id="lmClose">✕ 退出</button>
+    </div>
+  </div>
+  <div class="lm-body">
+    <iframe id="lmFrame" src="about:blank"></iframe>
+    <div class="lm-fallback" id="lmFallback">
+      <p>正在加载负荷管理系统…</p>
+      <a href="load-manager/index.html" target="_blank" class="btn">在新页面打开</a>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   存储层 - localStorage 持久化
+============================================================ */
+const Store = {
+  K_USERS:'tm_users', K_SESSION:'tm_session', K_ITEMS:'tm_items', K_NOTIFIED:'tm_notified',
+  get(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},
+  set(k,v){localStorage.setItem(k,JSON.stringify(v))},
+  getUsers(){return this.get(this.K_USERS,[])},
+  saveUsers(u){this.set(this.K_USERS,u)},
+  getItems(){return this.get(this.K_ITEMS,[])},
+  saveItems(i){this.set(this.K_ITEMS,i)},
+  getSession(){return this.get(this.K_SESSION,null)},
+  saveSession(s){this.set(this.K_SESSION,s)},
+  clearSession(){localStorage.removeItem(this.K_SESSION)},
+  getNotified(){return this.get(this.K_NOTIFIED,[])},
+  saveNotified(n){this.set(this.K_NOTIFIED,n)},
+};
+
+/* 项目配色 - 按项目名稳定分配 */
+const PALETTE=['#FF6B6B','#4ECDC4','#45B7D1','#FFA07A','#98D8C8','#F7DC6F','#BB8FCE','#5DADE2','#48C9B0','#F1948A','#A569BD','#5499C7'];
+function projColor(name){
+  let h=0;for(let i=0;i<name.length;i++)h=(h*31+name.charCodeAt(i))>>>0;
+  return PALETTE[h%PALETTE.length];
+}
+const ADMIN_PHONE='13800000000';
+
+/* ============================================================
+   工具
+============================================================ */
+const $=id=>document.getElementById(id);
+const pad=n=>String(n).padStart(2,'0');
+const todayStr=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`};
+const WEEKDAYS=['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+const fmtDate=s=>{const[y,m,d]=s.split('-');const dt=new Date(+y,+m-1,+d);return`${y}年${m}月${d}日 ${WEEKDAYS[dt.getDay()]}`};
+const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m};
+function nowMin(){const d=new Date();return d.getHours()*60+d.getMinutes()}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+
+/* ============================================================
+   认证模块
+============================================================ */
+let sendTimer=null;
+$('sendCode').onclick=()=>{
+  const phone=$('loginPhone').value.trim();
+  if(!/^1\d{10}$/.test(phone)){alert('请输入正确的11位手机号');return}
+  $('codeBox').style.display='block';
+  $('codeBox').textContent='演示验证码:123456(请勿外发,实际应为短信下发)';
+  let s=60;const btn=$('sendCode');btn.disabled=true;
+  btn.textContent=s+'s后重发';
+  clearInterval(sendTimer);
+  sendTimer=setInterval(()=>{s--;if(s<=0){clearInterval(sendTimer);btn.disabled=false;btn.textContent='获取验证码'}else btn.textContent=s+'s后重发'},1000);
+};
+$('loginBtn').onclick=()=>{
+  const phone=$('loginPhone').value.trim(),code=$('loginCode').value.trim();
+  if(!/^1\d{10}$/.test(phone)){alert('手机号格式不正确');return}
+  if(code!=='123456'){alert('验证码不正确(演示码:123456)');return}
+  let users=Store.getUsers();let u=users.find(x=>x.phone===phone);
+  if(!u){u={phone,nickname:'',isAdmin:phone===ADMIN_PHONE,createdAt:Date.now()};users.push(u);Store.saveUsers(users)}
+  Store.saveSession({phone});
+  enterApp();
+};
+$('logoutBtn').onclick=()=>{Store.clearSession();location.reload()};
+
+function currentUser(){const s=Store.getSession();if(!s)return null;return Store.getUsers().find(u=>u.phone===s.phone)||null}
+
+/* 昵称设置弹层 */
+function ensureNickname(u,cb){
+  if(u.nickname){cb();return}
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:100';
+  const card=document.createElement('div');
+  card.className='auth-card';
+  card.innerHTML=`<h1>设置昵称</h1><div class="sub">首次登录,请设置你的昵称</div>
+    <div class="field"><label>昵称</label><input class="input" id="nickInput" maxlength="16" placeholder="请输入昵称"></div>
+    <button class="btn block" id="nickSave">确定</button>`;
+  overlay.appendChild(card);document.body.appendChild(overlay);
+  const inp=card.querySelector('#nickInput');inp.focus();
+  const save=()=>{
+    const n=inp.value.trim();if(!n){alert('昵称不能为空');return}
+    u.nickname=n;let users=Store.getUsers();const i=users.findIndex(x=>x.phone===u.phone);users[i]=u;Store.saveUsers(users);
+    document.body.removeChild(overlay);cb();
+  };
+  card.querySelector('#nickSave').onclick=save;
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter')save()});
+}
+
+function enterApp(){
+  const u=currentUser();if(!u){return}
+  ensureNickname(u,()=>{
+    $('auth').style.display='none';$('app').style.display='block';
+    $('userName').textContent=u.nickname||u.phone;
+    $('avatar').textContent=(u.nickname||u.phone).slice(0,1).toUpperCase();
+    if(u.isAdmin)$('adminTab').style.display='inline-block';
+    curDate=todayStr();
+    $('fDate').value=todayStr();
+    renderSchedule();renderFreeList();
+    startReminder();
+  });
+}
+
+/* ============================================================
+   安排表渲染
+============================================================ */
+let curDate=todayStr();
+let mode='simple';
+
+function userItems(){const u=currentUser();return Store.getItems().filter(i=>i.phone===u.phone)}
+
+$('prevDay').onclick=()=>{curDate=shiftDate(curDate,-1);renderSchedule()};
+$('nextDay').onclick=()=>{curDate=shiftDate(curDate,1);renderSchedule()};
+$('todayBtn').onclick=()=>{curDate=todayStr();renderSchedule()};
+$('modeSimple').onclick=()=>{mode='simple';updateMode();renderSchedule()};
+$('modeDetail').onclick=()=>{mode='detail';updateMode();renderSchedule()};
+function updateMode(){
+  $('modeSimple').classList.toggle('active',mode==='simple');
+  $('modeDetail').classList.toggle('active',mode==='detail');
+}
+function shiftDate(s,d){const dt=new Date(s);dt.setDate(dt.getDate()+d);return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}`}
+
+function renderSchedule(){
+  $('dateLabel').textContent=fmtDate(curDate)+(curDate===todayStr()?' (今天)':'');
+  $('todayLabel').textContent='当前用户: '+(currentUser().nickname||currentUser().phone);
+  const items=userItems().filter(i=>i.date===curDate).sort((a,b)=>toMin(a.start)-toMin(b.start));
+  renderTimeline();
+  renderTable(items);
+}
+
+const TL_HOURS=[0,3,6,9,12,15,18,21,24];
+const TL_HEIGHT=576;
+const WD_SHORT=['周日','周一','周二','周三','周四','周五','周六'];
+
+function renderTimeline(){
+  const wrap=$('tlTrack');wrap.innerHTML='';
+  const T=TL_HEIGHT,today=todayStr();
+  const days=[];for(let i=0;i<7;i++)days.push(shiftDate(curDate,i));
+  const allItems=userItems();
+  // 时间刻度列(左侧)
+  const gutter=document.createElement('div');gutter.className='day-col time-gutter';
+  const gh=document.createElement('div');gh.className='gh';gutter.appendChild(gh);
+  const gb=document.createElement('div');gb.className='day-body';
+  TL_HOURS.forEach(h=>{
+    const ln=document.createElement('div');ln.className='wk-hour';ln.style.top=(h/24*T)+'px';gb.appendChild(ln);
+    const lb=document.createElement('div');lb.className='tg-hour';lb.style.top=(h/24*T)+'px';lb.textContent=pad(h)+':00';gb.appendChild(lb);
+  });
+  gutter.appendChild(gb);wrap.appendChild(gutter);
+  // 7 天纵列
+  days.forEach(ds=>{
+    const isToday=ds===today;const[y,m,d]=ds.split('-');const dt=new Date(+y,+m-1,+d);
+    const col=document.createElement('div');col.className='day-col';
+    const head=document.createElement('div');head.className='day-head'+(isToday?' today':'');
+    head.innerHTML=`<div>${+m}月${+d}日${isToday?' ·今天':''}</div><div class="wd">${WD_SHORT[dt.getDay()]}</div>`;
+    const body=document.createElement('div');body.className='day-body';
+    TL_HOURS.forEach(h=>{const ln=document.createElement('div');ln.className='wk-hour';ln.style.top=(h/24*T)+'px';body.appendChild(ln)});
+    const placed=layoutItems(allItems.filter(i=>i.date===ds));
+    if(!placed.length){const em=document.createElement('div');em.className='wk-empty';em.textContent='无安排';body.appendChild(em)}
+    placed.forEach(p=>{
+      const c=projColor(p.it.project);const lw=100/p.lanes;
+      const el=document.createElement('div');el.className='wk-item';
+      el.style.top=(p.s/1440*T)+'px';el.style.height=Math.max((p.e-p.s)/1440*T,14)+'px';
+      el.style.left=(p.lane*lw)+'%';el.style.width=(lw)+'%';el.style.background=c;
+      el.textContent=p.it.project;el.title=`${p.it.start}-${p.it.end} ${p.it.project}\n${p.it.description||''}`;
+      body.appendChild(el);
+    });
+    col.appendChild(head);col.appendChild(body);wrap.appendChild(col);
+  });
+}
+// 重叠事项分道布局:按时间聚类,同簇内分配 lane,宽度=100/簇内lane数
+function layoutItems(items){
+  const sorted=items.map(it=>({it,s:toMin(it.start),e:toMin(it.end)})).filter(x=>x.e>x.s).sort((a,b)=>a.s-b.s);
+  const clusters=[];let cur=[],curEnd=-1;
+  for(const x of sorted){if(cur.length&&x.s>=curEnd){clusters.push(cur);cur=[];curEnd=-1}cur.push(x);curEnd=Math.max(curEnd,x.e)}
+  if(cur.length)clusters.push(cur);
+  const out=[];
+  clusters.forEach(cl=>{const lanes=[];cl.forEach(x=>{let li=lanes.findIndex(le=>le<=x.s);if(li===-1){lanes.push(x.e);li=lanes.length-1}else lanes[li]=x.e;x.lane=li});const n=lanes.length||1;cl.forEach(x=>{x.lanes=n;out.push(x)})});
+  return out;
+}
+
+let emptyTimer=null;
+function renderTable(items){
+  const simple=$('simpleTable'),detail=$('detailTable');
+  const sCard=$('simpleView'),dCard=$('detailView');
+  // 互斥显隐:同一时间仅一种可见,无残留
+  sCard.style.display=mode==='simple'?'block':'none';
+  dCard.style.display=mode==='detail'?'block':'none';
+  document.querySelectorAll('.table-card .empty').forEach(e=>e.remove());
+  clearTimeout(emptyTimer);
+  if(!items.length){
+    simple.innerHTML='';detail.innerHTML='';
+    const card=mode==='simple'?sCard:dCard;
+    const e=document.createElement('div');e.className='empty';e.textContent='当日暂无安排,前往「新增事项」添加';
+    card.appendChild(e);
+    emptyTimer=setTimeout(()=>document.querySelectorAll('.table-card .empty').forEach(el=>el.remove()),5000);
+    return;
+  }
+  // 简洁视图:时间清晰 + 彩色色块(可点击)
+  const sHead='<thead><tr><th>时间</th><th>项目</th><th style="width:60px">操作</th></tr></thead><tbody>';
+  const sBody=items.map(it=>{
+    const c=projColor(it.project);
+    return `<tr>
+      <td class="time-cell"><div class="t-start">${esc(it.start)} → ${esc(it.end)}</div><div class="t-dur">${durStr(it.start,it.end)}</div></td>
+      <td><div class="blk" data-id="${it.id}" style="background:${c}"><span class="bar"></span>${esc(it.project)}</div></td>
+      <td><button class="del" data-id="${it.id}">删除</button></td></tr>`;
+  }).join('');
+  simple.innerHTML=sHead+sBody+'</tbody>';
+  // 详情视图:含事项明细列
+  const dHead='<thead><tr><th>时间</th><th>项目</th><th>事项明细</th><th style="width:60px">操作</th></tr></thead><tbody>';
+  const dBody=items.map(it=>{
+    const c=projColor(it.project);
+    const tag=`<span class="proj-tag" style="background:${c}1a;color:${c}"><span class="dot" style="background:${c}"></span>${esc(it.project)}</span>`;
+    return `<tr><td class="time-cell">${esc(it.start)} - ${esc(it.end)}</td><td>${tag}</td><td class="desc-cell">${esc(it.description||'-')}</td><td><button class="del" data-id="${it.id}">删除</button></td></tr>`;
+  }).join('');
+  detail.innerHTML=dHead+dBody+'</tbody>';
+  // 色块点击 -> 详情浮窗
+  simple.querySelectorAll('.blk').forEach(b=>b.onclick=()=>openItemModal(b.dataset.id));
+  // 删除绑定
+  document.querySelectorAll('.del').forEach(b=>b.onclick=()=>{
+    if(confirm('删除该事项?')){Store.saveItems(Store.getItems().filter(i=>i.id!==b.dataset.id));renderSchedule();renderFreeList();renderDayLoadBadge()}
+  });
+}
+function durStr(s,e){let m=toMin(e)-toMin(s);if(m<0)m+=1440;const h=Math.floor(m/60),mm=m%60;let r='';if(h)r+=h+'小时';if(mm)r+=mm+'分';return r||'0分'}
+
+/* 事项详情浮窗 */
+function openItemModal(id){
+  const it=Store.getItems().find(i=>i.id===id);if(!it)return;
+  const c=projColor(it.project);
+  $('modalContent').innerHTML=`
+    <div class="modal-row"><div class="k">项目</div><span class="modal-proj" style="background:${c}1a;color:${c}"><span class="dot" style="background:${c}"></span>${esc(it.project)}</span></div>
+    <div class="modal-row"><div class="k">日期</div><div class="v">${fmtDate(it.date)}</div></div>
+    <div class="modal-row"><div class="k">时间</div><div class="v">${esc(it.start)} - ${esc(it.end)} <span style="color:var(--muted);font-weight:500;font-size:.85rem">(${durStr(it.start,it.end)})</span></div></div>
+    <div class="modal-row"><div class="k">事项明细</div><div class="v" style="font-weight:500;line-height:1.6;white-space:pre-wrap">${esc(it.description||'(无描述)')}</div></div>`;
+  $('itemModal').classList.add('show');
+}
+function closeModal(){$('itemModal').classList.remove('show')}
+$('modalClose').onclick=closeModal;
+$('modalBackdrop').onclick=closeModal;
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
+function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+
+/* ============================================================
+   新增事项
+============================================================ */
+$('saveItemBtn').onclick=()=>{
+  const u=currentUser();
+  const project=$('fProject').value.trim(),desc=$('fDesc').value.trim();
+  const date=$('fDate').value,start=$('fStart').value,end=$('fEnd').value;
+  if(!project){alert('请填写项目名称');return}
+  if(!date||!start||!end){alert('请填写日期和时间区间');return}
+  if(toMin(end)<=toMin(start)){alert('结束时间需晚于开始时间');return}
+  const item={id:uid(),phone:u.phone,project,description:desc,date,start,end,createdAt:Date.now()};
+  Store.saveItems([...Store.getItems(),item]);
+  $('fProject').value='';$('fDesc').value='';$('fStart').value='';$('fEnd').value='';
+  curDate=date;renderSchedule();renderFreeList();
+  alert('事项已保存');
+  switchTab('schedule');
+};
+
+/* 空闲时间段 - 基于当日已有事项计算空隙 */
+function renderFreeList(){
+  const date=$('fDate').value;
+  const items=userItems().filter(i=>i.date===date).sort((a,b)=>toMin(a.start)-toMin(b.start));
+  const busy=[];items.forEach(i=>busy.push([toMin(i.start),toMin(i.end)]));
+  // 合并重叠
+  const merged=[];busy.sort((a,b)=>a[0]-b[0]);
+  for(const[b]of busy){if(b[0]>=b[1])continue}
+  for(const[s,e]of busy){const last=merged[merged.length-1];if(last&&s<=last[1])last[1]=Math.max(last[1],e);else merged.push([s,e])}
+  const free=[];let cur=0; // 0:00
+  const dayEnd=24*60;
+  for(const[s,e]of merged){if(s>cur)free.push([cur,s]);cur=Math.max(cur,e)}
+  if(cur<dayEnd)free.push([cur,dayEnd]);
+  const box=$('freeList');
+  if(!free.length||free.every(f=>f[1]-f[0]<=0)){box.innerHTML='<span class="free-empty">今日已满,暂无空闲</span>';return}
+  box.innerHTML='<div class="free-list">'+free.filter(f=>f[1]>f[0]).map(f=>{
+    const ss=pad(Math.floor(f[0]/60))+':'+pad(f[0]%60),ee=pad(Math.floor(f[1]/60))+':'+pad(f[1]%60);
+    return `<span class="free-chip">${ss} - ${ee}</span>`;
+  }).join('')+'</div>';
+}
+$('fDate').onchange=renderFreeList;
+
+/* ============================================================
+   Tab 切换
+============================================================ */
+document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+function switchTab(tab){
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+  const show=p=>{const el=$(p);if(el)el.style.display='none'};
+  $('page-schedule').style.display=tab==='schedule'?'block':'none';
+  $('page-add').style.display=tab==='add'?'block':'none';
+  $('page-interest').style.display=tab==='interest'?'block':'none';
+  $('page-social').style.display=tab==='social'?'block':'none';
+  const adminTab=$('page-admin');
+  if(tab==='admin'){
+    const u=currentUser();
+    if(!u||!u.isAdmin){alert('无权限访问后台管理页面');switchTab('schedule');return}
+    adminTab.style.display='block';renderAdmin();
+  }else adminTab.style.display='none';
+  // 负荷管理系统:打开浮窗(不切换主页面)
+  if(tab==='load'){openLoadManager();return}
+  if(tab==='add'){renderFreeList()}
+  if(tab==='interest'&&window.InterestView){window.InterestView.render()}
+  if(tab==='schedule'){renderSchedule();renderDayLoadBadge()}
+}
+
+/* ============================================================
+   负荷管理系统浮窗 + 联动接口
+   - openLoadManager: 打开全屏浮窗,内嵌 load-manager/index.html
+   - window.LMSBridge: 预留与计划时间表/社交/兴趣池联动的接口
+============================================================ */
+const LM_SRC='load-manager/index.html';
+function openLoadManager(){
+  const f=$('lmFrame');
+  // 仅在首次或切换回时设置 src,避免重复刷新打断问卷进度
+  if(!f.src||f.src.indexOf(LM_SRC)===-1){
+    f.src=LM_SRC;
+    $('lmFallback').classList.remove('hide');
+    f.onload=()=>$('lmFallback').classList.add('hide');
+  }
+  $('lmModal').classList.add('show');
+}
+function closeLoadManager(){$('lmModal').classList.remove('show')}
+$('lmClose').onclick=closeLoadManager;
+$('lmOpenTab').onclick=()=>window.open(LM_SRC,'_blank');
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeLoadManager()});
+
+/* 联动接口:供 load-manager 与未来模块(计划时间表/社交/兴趣池)互相调用
+   load-manager 通过 parent.window.LMSBridge.* 回写画像/日负荷;
+   主应用与各模块通过 LMSBridge.getDayLoad() 读取当日负荷等级 */
+window.LMSBridge={
+  _dayLoad:null, // {level,label,color,ratio} 最近一次日负荷分级
+  /** 由负荷系统回写当日负荷分级结果 */
+  setDayLoad(data){this._dayLoad=data;renderDayLoadBadge()},
+  /** 读取当日负荷分级(供社交/兴趣池/计划表联动) */
+  getDayLoad(){return this._dayLoad},
+  /** 读取当前用户画像(load-manager 写入 localStorage) */
+  getProfile(){try{return JSON.parse(localStorage.getItem('lms.person.v1'))||null}catch{return null}},
+  /** 读取本周计划(供计划时间表联动) */
+  getPlan(){try{return JSON.parse(localStorage.getItem('lms.plan.v1'))||[]}catch{return []}},
+  /** 计划时间表数据(供负荷系统/社交联动读取) */
+  getSchedule(){return Store.getItems().filter(i=>i.date===curDate)},
+
+  /* ---- 安排表写入接口(供兴趣池把计划编进安排表) ----
+     安排表是本程序内置的组成部分:落盘与刷新一律走这里,
+     外部模块只负责把计划换算成条目,不自己碰存储、也不自己画表。
+     这样「编进来的」和「手动新增的」在安排表里完全同质:
+     同一份 tm_items,同一套排序、着色、日负荷计算。 */
+
+  /** 我名下的全部安排表条目(供换算层查重、查冲突) */
+  scheduleItems(){
+    const u=currentUser();
+    return u?Store.getItems().filter(i=>i.phone===u.phone):[]
+  },
+
+  /** 把换算好的条目落进安排表。
+      items:带 id 的按 id 覆盖,不带的视为新增;每条带上编入来源以便重复编入能对上号。
+      rms:  要移除的条目 id(上一次编入留下、这次已经不在计划里的那些)。
+      写完整理一次安排表视图与当日负荷。 */
+  applySchedule(items,rms){
+    const u=currentUser();
+    if(!u)return{ok:false,reason:'nologin'};
+    const arr=Array.isArray(items)?items:[];
+    const del=Array.isArray(rms)?rms:[];
+    if(!arr.length&&!del.length)return{ok:false,reason:'empty'};
+    let all=Store.getItems();
+    const at={};all.forEach((it,i)=>{at[it.id]=i});
+    let added=0,updated=0,removed=0;
+    arr.forEach(t=>{
+      const patch={date:t.date,start:t.start,end:t.end,project:t.project,
+        description:t.description,origin:'plan',planId:t.planId,planRev:t.planRev,slot:t.slot};
+      const i=t.id?at[t.id]:undefined;
+      if(i!==undefined){all[i]=Object.assign({},all[i],patch);updated++}
+      else{all.push(Object.assign({id:uid(),phone:u.phone,createdAt:Date.now()},patch));added++}
+    });
+    if(del.length){
+      const kill={};del.forEach(id=>{kill[id]=1});
+      all=all.filter(it=>{if(kill[it.id]){removed++;return false}return true});
+    }
+    Store.saveItems(all);
+    /* 停在最早一条落进去的日期:用户切回安排表就能直接看到结果 */
+    const ds=arr.map(t=>t.date).sort();
+    const focus=ds.length?ds[0]:null;
+    if(focus&&/^\d{4}-\d{2}-\d{2}$/.test(focus))curDate=focus;
+    renderSchedule();renderFreeList();renderDayLoadBadge();
+    return{ok:true,added,updated,removed,focus}
+  },
+
+  /** 切到安排表并停在指定日期 */
+  focusSchedule(date){
+    if(date&&/^\d{4}-\d{2}-\d{2}$/.test(date))curDate=date;
+    switchTab('schedule');
+  }
+};
+
+/* 日负荷等级分级:依据负荷管理系统画像 + 当日事项时长
+   等级划分(单独一天的负荷等级,共5档,界面只显示文字不显示数值):
+   - 无画像:不显示徽标
+   - 有画像:按 capacity=weeklyHours*50*(0.7+0.6*recovery) 容量,
+     dayLoad=Σ(基线负荷% * 事项小时) / 容量 * 100
+   - 等级: <40% 很轻松(绿) | 40-70% 比较轻松(蓝) | 70-100% 刚刚好(黄) | 100-120% 有点吃力(橙) | ≥120% 太吃力(红) */
+function renderDayLoadBadge(){
+  const badge=$('dayLoadBadge');
+  const p=window.LMSBridge.getProfile();
+  if(!p){badge.style.display='none';window.LMSBridge._dayLoad=null;return}
+  const items=Store.getItems().filter(i=>i.phone===currentUser().phone&&i.date===curDate);
+  const totalHours=items.reduce((s,it)=>s+Math.max(0,(toMin(it.end)-toMin(it.start))/60),0);
+  const capacity=Math.max(1,p.weeklyHours*50*(0.7+0.6*(p.recovery??0.5)));
+  // 当日已安排事项的负荷量:用个人基线作为事项平均负荷占比
+  const dayLoad=totalHours>0?(p.baseline*totalHours)/capacity*100:0;
+  let level,label,color;
+  if(dayLoad<40){level='low';label='很轻松';color='#16a34a'}
+  else if(dayLoad<70){level='normal';label='比较轻松';color='#3b82f6'}
+  else if(dayLoad<100){level='good';label='刚刚好';color='#f59e0b'}
+  else if(dayLoad<120){level='high';label='有点吃力';color='#f97316'}
+  else{level='over';label='太吃力';color='#dc2626'}
+  window.LMSBridge._dayLoad={level,label,color,ratio:dayLoad,hours:totalHours,capacity};
+  badge.style.display='inline-flex';
+  badge.style.background=color+'1a';badge.style.color=color;
+  badge.innerHTML=`<span class="pip" style="background:${color}"></span>今天${label}(${totalHours.toFixed(1)}小时)`;
+  // 同步回写到负荷系统画像的今日负荷,供未来联动读取
+  try{localStorage.setItem('lms.dayload.v1',JSON.stringify(window.LMSBridge._dayLoad))}catch{}
+}
+
+/* ============================================================
+   后台统计
+============================================================ */
+function renderAdmin(){
+  const users=Store.getUsers();
+  const items=Store.getItems();
+  const todayItems=items.filter(i=>i.date===todayStr());
+  $('statUsers').textContent=users.length;
+  $('statItems').textContent=items.length;
+  $('statToday').textContent=todayItems.length;
+  const tbl=$('userTable');
+  let head='<thead><tr><th>昵称</th><th>手机号</th><th>角色</th><th>注册时间</th></tr></thead><tbody>';
+  let body=users.map(u=>{
+    const d=new Date(u.createdAt);
+    const t=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const role=u.isAdmin?'<span class="role-tag role-admin">管理员</span>':'<span class="role-tag role-user">普通用户</span>';
+    return `<tr><td>${esc(u.nickname||'-')}</td><td>${esc(u.phone)}</td><td>${role}</td><td>${t}</td></tr>`;
+  }).join('');
+  tbl.innerHTML=head+body+'</tbody>';
+}
+
+/* ============================================================
+   提醒系统 - 15分钟前提醒,每30秒检查
+============================================================ */
+let reminderTimer=null;
+const REMINDER_KEY=15; // 提前分钟数
+function startReminder(){
+  stopReminder();
+  checkReminder();
+  reminderTimer=setInterval(checkReminder,30000);
+}
+function stopReminder(){if(reminderTimer){clearInterval(reminderTimer);reminderTimer=null}}
+function checkReminder(){
+  const u=currentUser();if(!u)return;
+  const today=todayStr(),n=nowMin();
+  const items=Store.getItems().filter(i=>i.phone===u.phone&&i.date===today);
+  const notified=Store.getNotified();
+  let alertItem=null;
+  for(const it of items){
+    const s=toMin(it.start),minsUntil=s-n;
+    if(minsUntil>=0&&minsUntil<=REMINDER_KEY){
+      if(!notified.includes(it.id)){
+        alertItem={it,minsUntil};break;
+      }
+    }
+  }
+  if(alertItem){
+    const it=alertItem.it;
+    const txt=`即将开始:${it.project} ${it.start} 开始`+(it.description?` · ${it.description}`:'')+(alertItem.minsUntil<=0?` 已到开始时间`:` (还有${alertItem.minsUntil}分钟)`);
+    $('reminderText').textContent=txt;
+    $('reminder').classList.add('show');
+    Store.saveNotified([...Store.getNotified(),it.id]);
+  }
+  // 自动隐藏已过期提醒
+  const allNotified=Store.getNotified();
+  const stillActive=allNotified.filter(id=>{
+    const it=items.find(x=>x.id===id);
+    if(!it)return false;
+    return toMin(it.end)>n; // 事项未结束
+  });
+  if(stillActive.length<allNotified.length)Store.saveNotified(stillActive);
+  if(!stillActive.length)$('reminder').classList.remove('show');
+}
+$('reminderClose').onclick=()=>$('reminder').classList.remove('show');
+
+/* ============================================================
+   启动
+============================================================ */
+window.addEventListener('DOMContentLoaded',()=>{
+  const u=currentUser();
+  if(u)enterApp();
+  else $('auth').style.display='flex';
+  // 实时检测,即使跨分钟也能及时触发
+  setInterval(checkReminder,10000);
+});
+</script>
+
+<!-- ============================================================
+     兴趣池模块
+     复用负荷管理系统的评分引擎（纯函数，不重复实现），再加载兴趣池自身
+     的识别层 / 存储层 / 计划生成 / 界面层。
+     顺序要求：必须放在上方内联脚本之后——内联脚本以 const 形式声明了
+     Store / $ 等依赖，提前加载会触发暂时性死区报错。
+============================================================ -->
+<script src="load-manager/data/activities.js"></script>
+<script src="load-manager/js/engine.js"></script>
+<script src="load-manager/js/store.js"></script>
+<script src="js/interest-classifier.js"></script>
+<script src="js/interest-pool.js"></script>
+<script src="js/planner.js"></script>
+<script src="js/plan-editor.js"></script>
+<script src="js/interest-view.js"></script>
+<script src="js/plan-edit-view.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  if(window.InterestPool&&window.InterestPool.isStorageAvailable&&!window.InterestPool.isStorageAvailable()){
+    var box=document.getElementById('ipStorageHint');
+    if(box){box.textContent='提示：浏览器未允许本地保存，兴趣池只在本次打开期间有效。';}
+  }
+  if(window.InterestView){window.InterestView.init();}
+  if(window.PlanEditView){window.PlanEditView.init();}
+});
+</script>
+</body>
+</html>
