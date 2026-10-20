@@ -296,6 +296,73 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .section-divider { border: none; border-top: 1px solid var(--border); margin: 28px 0 18px; }
 .section-title { font-size: 18px; font-weight: 700; margin: 0 0 12px; }
 
+/* 设置 · 我的时间 */
+.avail-group { margin: 14px 0; padding-top: 10px; border-top: 1px solid var(--border); }
+.avail-group:first-of-type { border-top: none; padding-top: 0; }
+.avail-title { font-size: 13px; font-weight: 600; color: var(--text-dim); margin-bottom: 8px; }
+.avail-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; flex-wrap: wrap; }
+.avail-row input[type=time] {
+  background: var(--card-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 8px; font-family: inherit; font-size: 14px;
+}
+.avail-dash { color: var(--text-dim); }
+.avail-empty { font-size: 12px; color: var(--text-dim); padding: 6px 0; }
+.avail-rest { display: flex; flex-wrap: wrap; gap: 12px; }
+.avail-rest-item { display: flex; align-items: center; gap: 5px; font-size: 13px; cursor: pointer; }
+
+/* 周计划视图 */
+.week-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.week-load-num { font-size: 30px; font-weight: 800; line-height: 1.1; }
+.week-load-label { font-size: 14px; color: var(--text-dim); }
+.week-load-cap { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.week-top-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.week-title { font-size: 17px; font-weight: 700; margin: 18px 0 12px; color: var(--text); }
+
+.week-empty { text-align: center; padding: 28px 18px; }
+.week-empty-tip { color: var(--text-dim); font-size: 13px; margin-bottom: 14px; }
+.week-big-btn { font-size: 16px; padding: 12px 28px; }
+
+.week-days { display: flex; flex-direction: column; gap: 12px; }
+.week-day { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; }
+.week-day-head { font-weight: 700; font-size: 15px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.week-rest { color: var(--text-dim); font-size: 13px; padding: 4px 0; }
+.week-blocks { display: flex; flex-direction: column; gap: 10px; }
+
+.week-block { display: flex; gap: 12px; align-items: flex-start; background: var(--card-2); border: 1px solid var(--border); border-left: 3px solid var(--zone-comfort); border-radius: 8px; padding: 10px 12px; }
+.week-block.is-done { opacity: 0.5; }
+.wb-time { font-family: "Cascadia Code", "Consolas", monospace; font-size: 14px; font-weight: 600; white-space: nowrap; color: var(--text); min-width: 104px; }
+.wb-body { flex: 1; min-width: 0; }
+.wb-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wb-title { font-weight: 700; font-size: 15px; }
+.wb-match { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.wb-done { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-dim); cursor: pointer; white-space: nowrap; }
+.wb-out { font-size: 13px; color: var(--zone-comfort); margin-top: 5px; }
+.wb-tip { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.wb-actions { margin-top: 8px; }
+
+.slot-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; max-height: 260px; overflow-y: auto; }
+
+.week-unsched { margin-top: 14px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; }
+.week-unsched summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--zone-optimal); }
+.week-unsched-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--border); margin-top: 8px; }
+.week-unsched-name { font-size: 13px; color: var(--text-dim); flex: 1; min-width: 160px; }
+
+.week-foot { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+
+/* 打印：深色主题打印是一坨黑，必须覆盖成白底黑字；隐藏按钮与设置区 */
+@media print {
+  html, body { background: #fff !important; color: #000 !important; }
+  .app-header, .app-footer, .nav, .week-top-btns, .week-foot, .wb-actions,
+  .week-empty, .week-unsched, .notice, .modal-mask { display: none !important; }
+  .app { max-width: none; width: 100%; padding: 0; }
+  .week-day { background: #fff !important; border: 1px solid #999 !important; box-shadow: none !important; page-break-inside: avoid; }
+  .week-day-head, .wb-title, .week-title, .page-title { color: #000 !important; }
+  .week-block { background: #fff !important; border: 1px solid #bbb !important; border-left-width: 3px !important; page-break-inside: avoid; }
+  .wb-time, .wb-out { color: #000 !important; }
+  .wb-tip, .wb-match, .week-rest, .wb-done { color: #444 !important; }
+  .tag { border-color: #999 !important; color: #333 !important; background: #fff !important; }
+}
+
 /* 响应式 */
 @media (max-width: 760px) {
   .grid.cols-3, .grid.cols-2 { grid-template-columns: 1fr; }
@@ -311,4 +378,8 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 @media (max-width: 400px) {
   .act-grid { grid-template-columns: 1fr; }
   .big-number, .match-big { font-size: 24px; }
+  .week-block { flex-direction: column; gap: 4px; }
+  .wb-time { min-width: 0; }
+  .week-load-num { font-size: 26px; }
+  .week-day { padding: 12px; }
 }

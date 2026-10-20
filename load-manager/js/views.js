@@ -42,6 +42,26 @@
     return map;
   }
 
+  /* ── 周计划的日期小工具（仅用于决定「显示哪一周」，不参与排程计算；
+        排程的时间一律由 scheduler.js 按显式传入的 weekStart 算） ── */
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function monthDay(s) { return parseInt(s.slice(5, 7), 10) + '月' + parseInt(s.slice(8, 10), 10) + '日'; }
+  // 本周一的日期字符串（本地日历日）
+  function currentWeekStartStr() {
+    var d = new Date();
+    var back = (d.getDay() + 6) % 7; // 距上一个周一的天数
+    var mon = new Date(d.getFullYear(), d.getMonth(), d.getDate() - back);
+    return mon.getFullYear() + '-' + pad2(mon.getMonth() + 1) + '-' + pad2(mon.getDate());
+  }
+  // ISO 周序号（第 N 周）
+  function isoWeek(dateStr) {
+    var d = new Date(Date.UTC(parseInt(dateStr.slice(0, 4), 10), parseInt(dateStr.slice(5, 7), 10) - 1, parseInt(dateStr.slice(8, 10), 10)));
+    var day = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - day);
+    var yStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d - yStart) / 86400000) + 1) / 7);
+  }
+
   // ===== 推荐计划生成：3 套不同定位 =====
   function buildPlans(p, scoredMap) {
     var acts = DATA.ACTIVITIES.map(function (a) {
@@ -388,7 +408,11 @@
       var plan = LMS.store.getPlan();
       var scored = {};
       DATA.ACTIVITIES.forEach(function (a) { scored[a.id] = LMS.scoreActivity(p, a); });
-      var wl = LMS.weeklyLoadPercent(p, plan, scored);
+      // 周负荷只有一个真相：有时间表就按时间表里的实际块算，没时间表才回退。
+      // 看板与周计划页共用同一个函数，避免两处各算一遍导致数字打架。
+      var tt = LMS.store.getTimetable();
+      var ttForWeek = (tt && tt.days && tt.weekStart === currentWeekStartStr()) ? tt : null;
+      var wl = LMS.scheduler.computeWeekLoad(p, plan, ttForWeek, scored);
       var wlv = LMS.levelOfPercent(wl.percent);
 
       var ringCard = el('div', 'card');
@@ -457,6 +481,280 @@
       var cap = el('div', 'notice');
       cap.textContent = '这个评估会参考你每周能学的时间和休息情况，自动帮你算好，不用自己操心。';
       app.appendChild(cap);
+    },
+
+    // ===== 周计划（具体到几点做什么） =====
+    week: function () {
+      var app = $app(); app.innerHTML = '';
+      app.appendChild(el('h1', 'page-title', '周计划'));
+      app.appendChild(el('p', 'page-sub', '具体到几点做什么。时间、顺序、间隔都由本机算，不联网。'));
+
+      var p = LMS.store.getPerson() || LMS.store.defaultPerson();
+      var plan = LMS.store.getPlan();
+      var scored = scoredAll();
+      var weekStart = currentWeekStartStr();
+
+      function zoneColor(key) {
+        var z = (LMS.ZONES || []).filter(function (x) { return x.key === key; })[0];
+        return z ? z.color : '#58A6FF';
+      }
+
+      // 生成周计划（纯函数、同步算完，很快，不需要 loading 态）
+      function generate() {
+        var tt = LMS.scheduler.buildTimetable({
+          person: p, activities: DATA.ACTIVITIES, plan: plan,
+          availability: LMS.store.getAvailability(), done: LMS.store.getDone(),
+          weekStart: weekStart, scored: scored
+        });
+        // 渲染前必须校验一次，不通过就报错，不许静默渲染
+        var errs = LMS.scheduler.validateTimetable(tt);
+        if (errs.length > 0) {
+          app.innerHTML = '';
+          app.appendChild(el('h1', 'page-title', '周计划'));
+          app.appendChild(el('div', 'notice warn', '周计划没通过校验，已停止显示：' + errs.slice(0, 3).join('；')));
+          return;
+        }
+        LMS.store.setTimetable(tt);
+        views.week();
+      }
+
+      // 复制上周：按活动把上一次的安排拿过来，重新跑一遍排程（时间可能和上次不同）
+      function copyLastWeek() {
+        var old = LMS.store.getTimetable();
+        if (!old || !old.days) {
+          app.appendChild(el('div', 'notice', '还没有可以复制的周计划，先点「生成周计划」。'));
+          return;
+        }
+        var acc = {};
+        old.days.forEach(function (d) {
+          (d.blocks || []).forEach(function (b) { acc[b.activityId] = (acc[b.activityId] || 0) + (b.minutes || 0); });
+        });
+        var ids = Object.keys(acc);
+        if (ids.length === 0) {
+          app.appendChild(el('div', 'notice', '上一次没有排下任何内容，没法复制。'));
+          return;
+        }
+        var items = ids.map(function (id) {
+          var h = Math.max(0.5, Math.round(acc[id] / 60 * 2) / 2); // 取整到 0.5 小时
+          return { activityId: id, hours: h, weekday: -1 };
+        });
+        LMS.store.setPlan(items);
+        plan = items;
+        generate(); // 不直接搬时间，重新排一遍
+      }
+
+      // 导出 .ics：本地时间、不带时区后缀，避免手机端差 8 小时
+      function downloadICS(tt) {
+        function icsEsc(s) {
+          return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+        }
+        var lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//学习配速器//周计划//CN', 'CALSCALE:GREGORIAN'];
+        tt.days.forEach(function (d) {
+          var ds = d.date.replace(/-/g, '');
+          (d.blocks || []).forEach(function (b) {
+            lines.push('BEGIN:VEVENT');
+            lines.push('UID:' + ds + 'T' + b.start.replace(':', '') + '00-' + b.activityId + '@xuexipaisuqi');
+            lines.push('DTSTART:' + ds + 'T' + b.start.replace(':', '') + '00');
+            lines.push('DTEND:' + ds + 'T' + b.end.replace(':', '') + '00');
+            lines.push('SUMMARY:' + icsEsc('学习配速器 · ' + b.title));
+            lines.push('DESCRIPTION:' + icsEsc('产出：' + (b.deliverable || '') + ' ＋ 提示：' + (b.tip || '')));
+            lines.push('END:VEVENT');
+          });
+        });
+        lines.push('END:VCALENDAR');
+        var blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = el('a'); a.href = url; a.download = 'plan-' + tt.weekStart + '.ics';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      }
+
+      // 单个块的渲染（竖向时间轴的一行）
+      function renderBlock(day, b, bi) {
+        var row = el('div', 'week-block');
+        row.style.borderLeftColor = zoneColor(b.zone);
+        var time = el('div', 'wb-time', b.start + '–' + b.end);
+        row.appendChild(time);
+        var body = el('div', 'wb-body');
+
+        var top = el('div', 'wb-top');
+        top.appendChild(el('span', 'wb-title', esc(b.title)));
+        top.appendChild(el('span', 'tag', '第 ' + b.step + '/' + b.stepTotal + ' 步' + (b.review ? ' · 复习' : '')));
+        top.appendChild(el('span', 'spacer', ''));
+        top.appendChild(el('span', 'wb-match', '匹配度 ' + b.match));
+        var doneBox = el('label', 'wb-done');
+        var cb = el('input'); cb.type = 'checkbox';
+        cb.checked = LMS.store.isDone(day.date, b.activityId, b.step);
+        cb.onchange = function () {
+          // 只记录完成情况；这里不弹校准反馈弹窗（校准反馈按每周最多 3 次、寄生在别的流程里）
+          if (cb.checked) { LMS.store.markDone(day.date, b.activityId, b.step); row.classList.add('is-done'); }
+          else { LMS.store.unmarkDone(day.date, b.activityId, b.step); row.classList.remove('is-done'); }
+        };
+        if (cb.checked) row.classList.add('is-done');
+        doneBox.appendChild(cb);
+        doneBox.appendChild(el('span', '', '✓ 完成'));
+        top.appendChild(doneBox);
+        body.appendChild(top);
+
+        if (b.deliverable) body.appendChild(el('div', 'wb-out', '产出：' + esc(b.deliverable)));
+        if (b.tip) body.appendChild(el('div', 'wb-tip', '提示：' + esc(b.tip)));
+
+        var actions = el('div', 'wb-actions');
+        var moveBtn = el('button', 'btn ghost sm', '换时间');
+        moveBtn.onclick = function () {
+          var cur = LMS.store.getTimetable();
+          var starts = LMS.scheduler.legalStartsFor({
+            timetable: cur, availability: LMS.store.getAvailability(), person: p, scored: scored
+          }, day.date, bi);
+          if (document.querySelector('.modal-mask')) return;
+          var mask = el('div', 'modal-mask');
+          var modal = el('div', 'modal');
+          modal.appendChild(el('h3', '', '换时间'));
+          modal.appendChild(el('p', 'quiz-hint', day.weekday + ' ' + monthDay(day.date) + ' · ' + esc(b.title) + '（' + b.minutes + ' 分钟）'));
+          if (starts.length === 0) {
+            modal.appendChild(el('div', 'notice', '这一天没有别的合适空位了。'));
+          } else {
+            var grid = el('div', 'slot-grid');
+            starts.forEach(function (s) {
+              var sb = el('button', 'btn secondary sm', s);
+              sb.onclick = function () {
+                var cur2 = LMS.store.getTimetable();
+                LMS.scheduler.applyMove({ timetable: cur2, plan: plan, person: p, scored: scored }, day.date, bi, s);
+                LMS.store.setTimetable(cur2); // 立刻重算并重绘，顶部百分比跟着变
+                mask.remove();
+                views.week();
+              };
+              grid.appendChild(sb);
+            });
+            modal.appendChild(grid);
+          }
+          var acts = el('div', 'modal-actions');
+          var cancel = el('button', 'btn ghost', '关闭');
+          cancel.onclick = function () { mask.remove(); };
+          acts.appendChild(cancel);
+          modal.appendChild(acts);
+          mask.appendChild(modal);
+          mask.onclick = function (e) { if (e.target === mask) mask.remove(); };
+          document.body.appendChild(mask);
+        };
+        actions.appendChild(moveBtn);
+        body.appendChild(actions);
+
+        row.appendChild(body);
+        return row;
+      }
+
+      // 状态一：还没有计划 → 引导页
+      if (!plan || plan.length === 0) {
+        var guide = el('div', 'card');
+        guide.appendChild(el('div', 'notice', '还没有安排任何想学的事。先去活动库，把想学的加进本周计划。'));
+        var goBtn = el('button', 'btn', '去活动库挑一挑');
+        goBtn.onclick = function () { location.hash = '#/library'; };
+        guide.appendChild(goBtn);
+        app.appendChild(guide);
+        return;
+      }
+
+      var stored = LMS.store.getTimetable();
+      var ttValid = !!(stored && stored.days && stored.weekStart === weekStart);
+
+      // 顶部条：本周负荷 + 剩余容量 + 生成 + 复制上周
+      var bar = el('div', 'card week-top');
+      var load = LMS.scheduler.computeWeekLoad(p, plan, ttValid ? stored : null, scored);
+      var lv = LMS.levelOfPercent(load.percent);
+      var loadBox = el('div', 'week-load');
+      loadBox.innerHTML = '<div class="week-load-num" style="color:' + lv.color + '">' + Math.round(load.percent) + '%</div>' +
+        '<div class="week-load-label">本周负荷：' + lv.label + '</div>' +
+        '<div class="week-load-cap">剩余容量约 ' + Math.max(0, Math.round(100 - load.percent)) + '%</div>';
+      bar.appendChild(loadBox);
+      var barBtns = el('div', 'week-top-btns');
+      var genBtn = el('button', 'btn', ttValid ? '重新生成' : '生成周计划');
+      genBtn.onclick = generate;
+      barBtns.appendChild(genBtn);
+      var copyBtn = el('button', 'btn secondary', '复制上周');
+      copyBtn.onclick = copyLastWeek;
+      barBtns.appendChild(copyBtn);
+      bar.appendChild(barBtns);
+      app.appendChild(bar);
+
+      // 状态二：有计划但还没时间表 → 一个大按钮
+      if (!ttValid) {
+        var gen = el('div', 'card week-empty');
+        gen.appendChild(el('div', 'week-empty-tip', '点一下就按你填的空档时间排好，很快，不用等，也不联网。'));
+        var bigBtn = el('button', 'btn week-big-btn', '生成周计划');
+        bigBtn.onclick = generate;
+        gen.appendChild(bigBtn);
+        app.appendChild(gen);
+        return;
+      }
+
+      // 渲染前再校验一次，不通过就报错，不静默渲染
+      var errs2 = LMS.scheduler.validateTimetable(stored);
+      if (errs2.length > 0) {
+        app.appendChild(el('div', 'notice warn', '周计划数据有问题，已停止显示：' + errs2.slice(0, 3).join('；')));
+        return;
+      }
+
+      // 周标题
+      app.appendChild(el('div', 'week-title',
+        monthDay(stored.days[0].date) + ' – ' + monthDay(stored.days[6].date) + ' · 第 ' + isoWeek(stored.weekStart) + ' 周'));
+
+      var totalBlocks = stored.days.reduce(function (s, d) { return s + d.blocks.length; }, 0);
+      if (totalBlocks === 0) {
+        app.appendChild(el('div', 'notice warn', '本周排不下，建议减少计划量，或去设置里加多一点空档时间。'));
+      }
+
+      // 七天的卡片
+      var dayWrap = el('div', 'week-days');
+      stored.days.forEach(function (day) {
+        var card = el('div', 'week-day');
+        card.appendChild(el('div', 'week-day-head', day.weekday + ' ' + monthDay(day.date) + ' · ' + day.totalMinutes + ' 分钟'));
+        if (day.blocks.length === 0) {
+          card.appendChild(el('div', 'week-rest', '留白'));
+        } else {
+          var bl = el('div', 'week-blocks');
+          day.blocks.forEach(function (b, bi) { bl.appendChild(renderBlock(day, b, bi)); });
+          card.appendChild(bl);
+        }
+        dayWrap.appendChild(card);
+      });
+      app.appendChild(dayWrap);
+
+      // 没排下的活动（折叠区）
+      if (stored.unscheduled && stored.unscheduled.length > 0) {
+        var us = el('details', 'week-unsched');
+        us.appendChild(el('summary', '', '没排下的 ' + stored.unscheduled.length + ' 项（点开看看）'));
+        stored.unscheduled.forEach(function (u) {
+          var act = DATA.ACTIVITIES.filter(function (a) { return a.id === u.activityId; })[0];
+          var row = el('div', 'week-unsched-row');
+          row.appendChild(el('div', 'week-unsched-name', (act ? act.name : u.activityId) + ' · ' + (u.reason || '')));
+          var less = el('button', 'btn secondary sm', '减到 1 次试试');
+          less.onclick = function () {
+            plan = plan.map(function (it) {
+              return it.activityId === u.activityId ? { activityId: it.activityId, hours: 0.5, weekday: it.weekday } : it;
+            });
+            LMS.store.setPlan(plan);
+            generate();
+          };
+          row.appendChild(less);
+          us.appendChild(row);
+        });
+        app.appendChild(us);
+      }
+
+      if (stored.warnings && stored.warnings.length > 0) {
+        app.appendChild(el('div', 'notice', stored.warnings.join('；')));
+      }
+
+      // 底部：导出 .ics / 打印
+      var foot = el('div', 'week-foot');
+      var ics = el('button', 'btn secondary row', '导出 .ics');
+      ics.onclick = function () { downloadICS(stored); };
+      foot.appendChild(ics);
+      var printBtn = el('button', 'btn secondary row', '打印');
+      printBtn.onclick = function () { window.print(); };
+      foot.appendChild(printBtn);
+      app.appendChild(foot);
     },
 
     // ===== 设置页 =====
@@ -574,6 +872,74 @@
       fbRow.appendChild(fbLabel); fbRow.appendChild(fbToggle);
       cfgCard.appendChild(fbRow);
       app.appendChild(cfgCard);
+
+      // ===== 「我的时间」：周计划排到哪些时间段 =====
+      var avCard = el('div', 'card');
+      avCard.appendChild(el('h3', '', '我的时间'));
+      avCard.appendChild(el('p', 'page-sub', '告诉系统你平时哪些时间有空学习，排周计划时会只用这些时间。留白的星期不会被安排任何内容。'));
+      var avail = LMS.store.getAvailability();
+
+      function saveAvail() { LMS.store.setAvailability(avail); }
+
+      // 一组时段（工作日 / 周末）
+      function segEditor(title, key) {
+        var box = el('div', 'avail-group');
+        box.appendChild(el('div', 'avail-title', title));
+        var listBox = el('div', '');
+        box.appendChild(listBox);
+        function redrawSegs() {
+          listBox.innerHTML = '';
+          (avail[key] || []).forEach(function (seg, i) {
+            var row = el('div', 'avail-row');
+            var s = el('input'); s.type = 'time'; s.value = seg.start;
+            var dash = el('span', 'avail-dash', '—');
+            var e2 = el('input'); e2.type = 'time'; e2.value = seg.end;
+            s.onchange = function () { seg.start = s.value; saveAvail(); };
+            e2.onchange = function () { seg.end = e2.value; saveAvail(); };
+            var del = el('button', 'btn ghost sm', '删除');
+            del.onclick = function () { avail[key].splice(i, 1); saveAvail(); redrawSegs(); };
+            row.appendChild(s); row.appendChild(dash); row.appendChild(e2); row.appendChild(del);
+            listBox.appendChild(row);
+          });
+          if ((avail[key] || []).length === 0) {
+            listBox.appendChild(el('div', 'avail-empty', '没有可用的时间段，这段时间不会排任何内容。'));
+          }
+        }
+        var addBtn = el('button', 'btn secondary sm', '＋ 加一段时间');
+        addBtn.onclick = function () {
+          if (!avail[key]) avail[key] = [];
+          avail[key].push({ start: '20:00', end: '21:00' });
+          saveAvail(); redrawSegs();
+        };
+        box.appendChild(addBtn);
+        redrawSegs();
+        return box;
+      }
+
+      avCard.appendChild(segEditor('工作日（周一至周五）', 'workday'));
+      avCard.appendChild(segEditor('周末（周六、周日）', 'weekend'));
+
+      var restBox = el('div', 'avail-group');
+      restBox.appendChild(el('div', 'avail-title', '留白日（这一天不排任何内容）'));
+      var restRow = el('div', 'avail-rest');
+      ['周一', '周二', '周三', '周四', '周五', '周六', '周日'].forEach(function (name) {
+        var lb = el('label', 'avail-rest-item');
+        var cb = el('input'); cb.type = 'checkbox';
+        cb.checked = (avail.restDay || []).indexOf(name) >= 0;
+        cb.onchange = function () {
+          var idx = avail.restDay.indexOf(name);
+          if (cb.checked && idx < 0) avail.restDay.push(name);
+          if (!cb.checked && idx >= 0) avail.restDay.splice(idx, 1);
+          saveAvail();
+        };
+        lb.appendChild(cb);
+        var txt = el('span', '', name);
+        lb.appendChild(txt);
+        restRow.appendChild(lb);
+      });
+      restBox.appendChild(restRow);
+      avCard.appendChild(restBox);
+      app.appendChild(avCard);
     }
   };
 

@@ -5,6 +5,7 @@
 var path = require('path');
 var LMS = require(path.join(__dirname, '..', 'js', 'engine.js'));
 var LMS_DATA = require(path.join(__dirname, '..', 'data', 'activities.js'));
+var SCHED = require(path.join(__dirname, '..', 'js', 'scheduler.js'));
 var ACTIVITIES = LMS_DATA.ACTIVITIES;
 var DEMO = LMS_DATA.DEMO_PROFILES;
 
@@ -272,6 +273,201 @@ console.log('\n=== matchOf ===');
   console.log('  matchOf(66)=' + m66 + ' matchOf(86)=' + m86 + ' matchOf(0)=' + m0);
   if (m66 === 100 && m86 === 64 && m0 === 0) PASS('matchOf: 66→100, 86→64, 0→0');
   else FAIL('matchOf', '66→' + m66 + ' 86→' + m86 + ' 0→' + m0);
+})();
+
+/* ───────── 排程引擎 · 执行卡完整性 ───────── */
+console.log('\n=== 排程 · 执行卡完整性 ===');
+(function() {
+  var badWord = /了解|熟悉|培养|学习一下|接触/;
+  var noCards = ACTIVITIES.filter(function(a){ return !Array.isArray(a.cards) || a.cards.length < 2 || a.cards.length > 4; });
+  if (noCards.length === 0) PASS('12 个活动都有 2–4 张执行卡（共 ' + ACTIVITIES.length + ' 个活动）');
+  else FAIL('执行卡数量', noCards.map(function(a){ return a.id + '=' + (a.cards ? a.cards.length : 0); }).join(', '));
+
+  var issues = [];
+  ACTIVITIES.forEach(function(a) {
+    (a.cards || []).forEach(function(c, i) {
+      var tag = a.id + ' 第' + (i + 1) + '张';
+      if (!c.action || c.action.length < 8) issues.push(tag + ' action 太短');
+      if (badWord.test(c.action || '')) issues.push(tag + ' action 含禁用词: ' + c.action);
+      if (!c.deliverable) issues.push(tag + ' 缺 deliverable');
+      if (!c.tip) issues.push(tag + ' 缺 tip');
+      if ((c.tip || '').length > 30) issues.push(tag + ' tip 超过 30 字: ' + (c.tip || '').length);
+      if (c.step !== i + 1) issues.push(tag + ' step 序号不连续');
+    });
+  });
+  if (issues.length === 0) PASS('执行卡逐条合规：无「了解/熟悉/培养/学习一下/接触」、都有产出与提示');
+  else FAIL('执行卡逐条合规', issues.slice(0, 6).join('; '));
+})();
+
+/* ───────── 排程引擎 · 黄金用例（6 条，禁止修改期望值） ───────── */
+console.log('\n=== 排程 · 黄金用例 ===');
+(function() {
+  var person = DEMO.A; // peakTime:night, block:65, weeklyHours:10, recovery:0.85
+  var availability = {
+    workday: [{ start: '20:00', end: '22:00' }],
+    weekend: [{ start: '09:00', end: '12:00' }, { start: '14:00', end: '21:00' }],
+    restDay: ['周日']
+  };
+  var input = {
+    person: person, activities: ACTIVITIES,
+    plan: [{ activityId: 'python-data-video', hours: 1.5 }, { activityId: 'sketch-copy', hours: 1 }],
+    availability: availability, done: [], weekStart: '2026-02-16'
+  };
+  var tt = SCHED.buildTimetable(input);
+  var WORKDAYS = ['周一', '周二', '周三', '周四', '周五'];
+  var all = [];
+  tt.days.forEach(function(d) { d.blocks.forEach(function(b) { all.push({ b: b, weekday: d.weekday, date: d.date }); }); });
+  var py = all.filter(function(x) { return x.b.activityId === 'python-data-video'; });
+  var sk = all.filter(function(x) { return x.b.activityId === 'sketch-copy'; });
+
+  console.log('  weekStart=' + tt.weekStart + ' weekLoad=' + tt.weekLoad);
+  tt.days.forEach(function(d) {
+    console.log('  ' + d.weekday + ' ' + d.date + '  ' + d.totalMinutes + '分钟  ' +
+      d.blocks.map(function(b) { return b.start + '-' + b.end + ' ' + b.activityId + '(第' + b.step + '/' + b.stepTotal + '步,' + b.score + '分)'; }).join(' | '));
+  });
+
+  if (py.length === 2) PASS('黄金 1: python-data-video 出现 2 个块');
+  else FAIL('黄金 1: python-data-video 出现 2 个块', '实际 ' + py.length);
+
+  var pyOnWorkday = py.filter(function(x) { return WORKDAYS.indexOf(x.weekday) >= 0; });
+  if (pyOnWorkday.length === 0) PASS('黄金 2: python 的块一个都不在工作日（时段匹配生效）');
+  else FAIL('黄金 2: python 不在工作日', pyOnWorkday.map(function(x) { return x.weekday + ' ' + x.b.start; }).join(', '));
+
+  var skOk = sk.length > 0 && sk.every(function(x) { return WORKDAYS.indexOf(x.weekday) >= 0 && x.b.start >= '20:00' && x.b.end <= '22:00'; });
+  if (skOk) PASS('黄金 3: sketch-copy 落在工作日 20:00–22:00');
+  else FAIL('黄金 3: sketch-copy 落在工作日 20:00–22:00', sk.map(function(x) { return x.weekday + ' ' + x.b.start + '-' + x.b.end; }).join(', '));
+
+  var sunday = tt.days.filter(function(d) { return d.weekday === '周日'; })[0];
+  if (sunday.blocks.length === 0) PASS('黄金 4: 周日 blocks 长度是 0（留白日生效）');
+  else FAIL('黄金 4: 周日 blocks 长度是 0', '实际 ' + sunday.blocks.length);
+
+  var tt2 = SCHED.buildTimetable(input);
+  if (JSON.stringify(tt) === JSON.stringify(tt2)) PASS('黄金 5: 同输入跑两次 JSON 完全相同（确定性）');
+  else FAIL('黄金 5: 确定性', '两次输出不一致');
+
+  var errs = SCHED.validateTimetable(tt);
+  if (Array.isArray(errs) && errs.length === 0) PASS('黄金 6: validateTimetable 返回空数组');
+  else FAIL('黄金 6: validateTimetable 返回空数组', JSON.stringify(errs));
+
+  /* 反向：故意放宽校验器，确认它真的会拦 */
+  var broken = JSON.parse(JSON.stringify(tt));
+  broken.days[0].blocks[0].start = '25:99';
+  if (SCHED.validateTimetable(broken).length > 0) PASS('黄金 6b（反向）: 非法时间被抓到');
+  else FAIL('黄金 6b（反向）: 非法时间被漏掉');
+})();
+
+/* ───────── 排程引擎 · 边界与约束 ───────── */
+console.log('\n=== 排程 · 边界与约束 ===');
+(function() {
+  var person = DEMO.A;
+  var avail = { workday: [{ start: '20:00', end: '22:00' }], weekend: [{ start: '09:00', end: '12:00' }, { start: '14:00', end: '21:00' }], restDay: ['周日'] };
+  function build(plan, availability, done) {
+    return SCHED.buildTimetable({ person: person, activities: ACTIVITIES, plan: plan, availability: availability || avail, done: done || [], weekStart: '2026-02-16' });
+  }
+
+  /* 超容量 → unscheduled 且有原因，不崩 */
+  var over = build(['python-data-video','sketch-copy','tech-blog','blender-basics','arduino-project','piano-piece','read-cogsci-book','history-notes']
+    .map(function(id) { return { activityId: id, hours: 2 }; }));
+  console.log('  超容量: 块数=' + over.days.reduce(function(s,d){return s+d.blocks.length;},0) + ' unscheduled=' + JSON.stringify(over.unscheduled));
+  if (over.unscheduled.length > 0 && over.unscheduled.every(function(u){ return u.reason; }) && over.errors.length === 0) {
+    PASS('边界: 计划远超容量时有 unscheduled 且写明原因，不崩');
+  } else FAIL('边界: 超容量', JSON.stringify(over.unscheduled) + ' errors=' + JSON.stringify(over.errors));
+
+  /* 非法时段 */
+  var badAvail = { workday: [{ start: '22:00', end: '20:00' }], weekend: avail.weekend, restDay: ['周日'] };
+  var bad = build([{ activityId: 'sketch-copy', hours: 1 }], badAvail);
+  if (bad.warnings.some(function(w){ return /不合法/.test(w); }) && bad.errors.length === 0) PASS('边界: end<=start 的段被跳过并提示，不崩');
+  else FAIL('边界: 非法时段', JSON.stringify(bad.warnings));
+
+  /* hours 为 0 / 负数 */
+  var zero = build([{ activityId: 'sketch-copy', hours: 0 }, { activityId: 'piano-piece', hours: -1 }]);
+  if (zero.days.every(function(d){ return d.blocks.length === 0; })) PASS('边界: hours 为 0 或负数 → 忽略该条');
+  else FAIL('边界: hours<=0');
+
+  /* 活动不存在 */
+  var ghost = build([{ activityId: 'no-such-act', hours: 1 }]);
+  if (ghost.warnings.some(function(w){ return /找不到/.test(w); })) PASS('边界: 计划引用不存在的活动 → 跳过并记 warning');
+  else FAIL('边界: 幽灵活动', JSON.stringify(ghost.warnings));
+
+  /* 全留白 */
+  var none = build([{ activityId: 'sketch-copy', hours: 1 }], { workday: [], weekend: [], restDay: ['周一','周二','周三','周四','周五','周六','周日'] });
+  if (none.days.every(function(d){ return d.blocks.length === 0; }) && none.unscheduled.length > 0) PASS('边界: 所有时段都塞不下 → 无块 + unscheduled，页面可提示');
+  else FAIL('边界: 全留白');
+
+  /* H1–H4 在随机规模下不被破坏 */
+  var big = build(['duolingo-japanese','prompt-engineering','read-cogsci-book','sketch-copy','piano-piece','lr-color-grading'].map(function(id){ return { activityId: id, hours: 3 }; }));
+  if (big.errors.length === 0) PASS('约束: 6 活动 × 3 小时排完，H1–H4 全部满足（validateTimetable 空）');
+  else FAIL('约束: H1–H4', JSON.stringify(big.errors));
+
+  /* 执行卡轮转 */
+  var done2 = [{ date: '2026-02-01', activityId: 'sketch-copy', step: 1 }, { date: '2026-02-01', activityId: 'sketch-copy', step: 2 }];
+  var rot = build([{ activityId: 'sketch-copy', hours: 1 }], null, done2);
+  var rb = rot.days.reduce(function(a,d){ return a.concat(d.blocks); }, [])[0];
+  if (rb.step === 3 && rb.stepTotal === 3 && rb.review === false) PASS('执行卡轮转: 已完成 2 步 → 用第 3 张卡');
+  else FAIL('执行卡轮转: 已完成 2 步', 'step=' + rb.step + '/' + rb.stepTotal);
+
+  var done3 = [{ date:'2026-02-01', activityId:'sketch-copy', step:1 }, { date:'2026-02-02', activityId:'sketch-copy', step:2 }, { date:'2026-02-03', activityId:'sketch-copy', step:3 }];
+  var rot2 = build([{ activityId: 'sketch-copy', hours: 1 }], null, done3);
+  var rb2 = rot2.days.reduce(function(a,d){ return a.concat(d.blocks); }, [])[0];
+  if (rb2.step === 1 && rb2.review === true) PASS('执行卡轮转: 全部做完 → 回到第 1 张并标注「复习」');
+  else FAIL('执行卡轮转: 全部做完', 'step=' + rb2.step + ' review=' + rb2.review);
+})();
+
+/* ───────── 周负荷单一真相 ───────── */
+console.log('\n=== 周负荷单一真相 ===');
+(function() {
+  var person = DEMO.A;
+  var avail = { workday: [{ start: '20:00', end: '22:00' }], weekend: [{ start: '09:00', end: '12:00' }, { start: '14:00', end: '21:00' }], restDay: ['周日'] };
+  var scored = {};
+  ACTIVITIES.forEach(function(a) { scored[a.id] = LMS.scoreActivity(person, a); });
+  var plan = [{ activityId: 'python-data-video', hours: 3 }, { activityId: 'sketch-copy', hours: 1 }];
+  var tt = SCHED.buildTimetable({ person: person, activities: ACTIVITIES, plan: plan, availability: avail, done: [], weekStart: '2026-02-16', scored: scored });
+
+  /* 有时间表：用时间表算 */
+  var withTt = SCHED.computeWeekLoad(person, plan, tt, scored);
+  /* 没有时间表：回退到 engine 的老算法 */
+  var withoutTt = SCHED.computeWeekLoad(person, plan, null, scored);
+  var engineVal = LMS.weeklyLoadPercent(person, plan, scored);
+  console.log('  有时间表=' + withTt.percent + '%  无时间表=' + withoutTt.percent + '%  engine 回退=' + engineVal.percent + '%');
+  if (withoutTt.percent === engineVal.percent) PASS('周负荷: 没有时间表时回退到 engine 老算法，老用户数据不变');
+  else FAIL('周负荷: 回退不一致', withoutTt.percent + ' vs ' + engineVal.percent);
+  if (Math.round(withTt.percent) === tt.weekLoad) PASS('周负荷: timetable.weekLoad 与 computeWeekLoad 同一个数（只有一处算）');
+  else FAIL('周负荷: 时间表口径不一致', tt.weekLoad + ' vs ' + withTt.percent);
+
+  /* 回归：两个高负荷(>70)活动排同一天 vs 拆两天，P1 > P2 */
+  var personB = DEMO.B; /* A 的活动分都 ≤70，触发不了日高负荷惩罚，用 B */
+  var scoredB = {};
+  ACTIVITIES.forEach(function(a) { scoredB[a.id] = LMS.scoreActivity(personB, a); });
+  var dayP = [{ activityId: 'tech-blog', hours: 2 }, { activityId: 'blender-basics', hours: 2 }];
+  var sameDay = SCHED.computeWeekLoad(personB, dayP, {
+    days: [
+      { date: '2026-02-16', weekday: '周一', totalMinutes: 120, blocks: [
+        { activityId: 'tech-blog', title: 'x', start: '20:00', end: '21:00', minutes: 60, step: 1, stepTotal: 3, score: scoredB['tech-blog'].score, match: 50, zone: 'high' },
+        { activityId: 'blender-basics', title: 'y', start: '21:10', end: '22:10', minutes: 60, step: 1, stepTotal: 3, score: scoredB['blender-basics'].score, match: 50, zone: 'high' }
+      ] },
+      { date: '2026-02-17', weekday: '周二', totalMinutes: 0, blocks: [] }
+    ]
+  }, scoredB);
+  var split = SCHED.computeWeekLoad(personB, dayP, {
+    days: [
+      { date: '2026-02-16', weekday: '周一', totalMinutes: 60, blocks: [
+        { activityId: 'tech-blog', title: 'x', start: '20:00', end: '21:00', minutes: 60, step: 1, stepTotal: 3, score: scoredB['tech-blog'].score, match: 50, zone: 'high' }
+      ] },
+      { date: '2026-02-17', weekday: '周二', totalMinutes: 60, blocks: [
+        { activityId: 'blender-basics', title: 'y', start: '20:00', end: '21:00', minutes: 60, step: 1, stepTotal: 3, score: scoredB['blender-basics'].score, match: 50, zone: 'high' }
+      ] }
+    ]
+  }, scoredB);
+  console.log('  两个 >70 活动: 同一天 P1=' + sameDay.percent + '%  拆两天 P2=' + split.percent + '%');
+  if (sameDay.percent > split.percent) PASS('回归: 有时间表时 P1 > P2 仍成立');
+  else FAIL('回归: 有时间表时 P1 > P2', 'P1=' + sameDay.percent + ' P2=' + split.percent);
+
+  var planP = [{ activityId: 'tech-blog', hours: 2, weekday: 1 }, { activityId: 'blender-basics', hours: 2, weekday: 1 }];
+  var planQ = [{ activityId: 'tech-blog', hours: 2, weekday: 1 }, { activityId: 'blender-basics', hours: 2, weekday: 2 }];
+  var e1 = LMS.weeklyLoadPercent(personB, planP, scoredB).percent;
+  var e2 = LMS.weeklyLoadPercent(personB, planQ, scoredB).percent;
+  if (e1 > e2) PASS('回归: 没有时间表时 P1 (' + e1 + '%) > P2 (' + e2 + '%) 仍成立');
+  else FAIL('回归: 没有时间表时 P1 > P2', 'P1=' + e1 + ' P2=' + e2);
 })();
 
 /* ───────── 汇总 ───────── */

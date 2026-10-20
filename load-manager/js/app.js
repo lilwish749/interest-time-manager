@@ -32,6 +32,8 @@
         LMS.views.activity(parts[1] || ''); break;
       case 'dashboard':
         LMS.views.dashboard(); break;
+      case 'week':
+        LMS.views.week(); break;
       case 'settings':
         LMS.views.settings(); break;
       default:
@@ -42,6 +44,8 @@
 
   var app = {
     init: function () {
+      // 先跑数据迁移：旧数据缺字段自动补默认值，不影响老用户
+      if (LMS.store && LMS.store.migrate) { LMS.store.migrate(); }
       window.addEventListener('hashchange', route);
       if (!location.hash) { location.hash = '#/welcome'; }
       else { route(); }

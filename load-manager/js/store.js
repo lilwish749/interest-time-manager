@@ -7,7 +7,10 @@
     PERSON: 'lms.person.v1',
     LOGS: 'lms.logs.v1',
     PLAN: 'lms.plan.v1',
-    CONFIG: 'lms.config.v1'
+    CONFIG: 'lms.config.v1',
+    AVAIL: 'lms.avail.v1',
+    TIMETABLE: 'lms.timetable.v1',
+    DONE: 'lms.done.v1'
   };
 
   function read(key, fallback) {
@@ -53,6 +56,79 @@
       feedbackEnabled: false,
       weeklyReminder: 3
     };
+  }
+
+  // 默认可用时段时间表（工作日 / 周末分开配置，restDay 为完全留白的星期）
+  function defaultAvailability() {
+    return {
+      workday: [{ start: '20:00', end: '22:00' }],
+      weekend: [{ start: '09:00', end: '12:00' }, { start: '14:00', end: '21:00' }],
+      restDay: ['周日']
+    };
+  }
+
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+
+  // 迁移与补默认值：任何缺失字段都补上，绝不让旧数据把页面弄崩
+  function migrate() {
+    try {
+      // 画像
+      var person = read(KEYS.PERSON, null);
+      if (person && typeof person === 'object') {
+        var dp = defaultPerson();
+        Object.keys(dp).forEach(function (k) {
+          if (person[k] === undefined || person[k] === null) { person[k] = clone(dp[k]); }
+        });
+        if (!person.channel || typeof person.channel !== 'object') { person.channel = clone(dp.channel); }
+        if (!person.domains || typeof person.domains !== 'object') { person.domains = {}; }
+        if (!person.calibration || typeof person.calibration !== 'object') { person.calibration = clone(dp.calibration); }
+        if (!person.answered || typeof person.answered !== 'object') { person.answered = clone(dp.answered); }
+        write(KEYS.PERSON, person);
+      }
+      // 计划：逐条补 weekday
+      var plan = read(KEYS.PLAN, []);
+      if (Array.isArray(plan)) {
+        var normPlan = plan.filter(function (it) { return it && it.activityId != null; })
+          .map(function (it) {
+            return {
+              activityId: String(it.activityId),
+              hours: (typeof it.hours === 'number' && it.hours > 0) ? it.hours : 1,
+              weekday: (typeof it.weekday === 'number') ? it.weekday : -1
+            };
+          });
+        write(KEYS.PLAN, normPlan);
+      } else {
+        write(KEYS.PLAN, []);
+      }
+      // 可用时段
+      var av = read(KEYS.AVAIL, null);
+      if (!av || typeof av !== 'object') {
+        write(KEYS.AVAIL, defaultAvailability());
+      } else {
+        var dav = defaultAvailability();
+        if (!Array.isArray(av.workday)) { av.workday = dav.workday; }
+        if (!Array.isArray(av.weekend)) { av.weekend = dav.weekend; }
+        if (!Array.isArray(av.restDay)) { av.restDay = dav.restDay; }
+        write(KEYS.AVAIL, av);
+      }
+      // 已完成执行卡
+      var done = read(KEYS.DONE, null);
+      if (!Array.isArray(done)) { write(KEYS.DONE, []); }
+      // 配置
+      var cfg = read(KEYS.CONFIG, null);
+      if (cfg && typeof cfg === 'object') {
+        var dc = defaultConfig();
+        Object.keys(dc).forEach(function (k) {
+          if (cfg[k] === undefined || cfg[k] === null) { cfg[k] = clone(dc[k]); }
+        });
+        if (!cfg.weights || typeof cfg.weights !== 'object') { cfg.weights = clone(dc.weights); }
+        write(KEYS.CONFIG, cfg);
+      }
+      return true;
+    } catch (e) {
+      // 迁移失败绝不影响主流程
+      return false;
+    }
   }
 
   var store = {
@@ -102,8 +178,51 @@
     getConfig: function () { return read(KEYS.CONFIG, defaultConfig()); },
     setConfig: function (c) { return write(KEYS.CONFIG, c); },
 
+    // 可用时段：工作日 / 周末的开放段 + 留白日
+    getAvailability: function () { return read(KEYS.AVAIL, defaultAvailability()); },
+    setAvailability: function (a) { return write(KEYS.AVAIL, a); },
+
+    // 周计划时间表
+    getTimetable: function () { return read(KEYS.TIMETABLE, null); },
+    setTimetable: function (t) { return write(KEYS.TIMETABLE, t); },
+    clearTimetable: function () { try { localStorage.removeItem(KEYS.TIMETABLE); } catch (e) {} },
+
+    // 已完成的执行卡：[{ date, activityId, step }]
+    getDone: function () { return read(KEYS.DONE, []); },
+    setDone: function (d) { return write(KEYS.DONE, d); },
+    // 某活动已完成的步数（用于执行卡轮转）
+    doneCount: function (activityId) {
+      var list = read(KEYS.DONE, []);
+      return list.filter(function (x) { return x && x.activityId === activityId; }).length;
+    },
+    markDone: function (date, activityId, step) {
+      var list = read(KEYS.DONE, []);
+      var exists = list.some(function (x) {
+        return x && x.activityId === activityId && x.date === date && x.step === step;
+      });
+      if (!exists) { list.push({ date: date, activityId: activityId, step: step }); }
+      write(KEYS.DONE, list);
+      return list;
+    },
+    unmarkDone: function (date, activityId, step) {
+      var list = read(KEYS.DONE, []).filter(function (x) {
+        return !(x && x.activityId === activityId && x.date === date && x.step === step);
+      });
+      write(KEYS.DONE, list);
+      return list;
+    },
+    isDone: function (date, activityId, step) {
+      var list = read(KEYS.DONE, []);
+      return list.some(function (x) {
+        return x && x.activityId === activityId && x.date === date && x.step === step;
+      });
+    },
+    clearDone: function () { write(KEYS.DONE, []); },
+
     defaultPerson: defaultPerson,
     defaultConfig: defaultConfig,
+    defaultAvailability: defaultAvailability,
+    migrate: migrate,
 
     resetAll: function () {
       Object.keys(KEYS).forEach(function (k) { localStorage.removeItem(KEYS[k]); });
@@ -114,7 +233,10 @@
         person: read(KEYS.PERSON, null),
         logs: read(KEYS.LOGS, []),
         plan: read(KEYS.PLAN, []),
-        config: read(KEYS.CONFIG, defaultConfig())
+        config: read(KEYS.CONFIG, defaultConfig()),
+        availability: read(KEYS.AVAIL, defaultAvailability()),
+        timetable: read(KEYS.TIMETABLE, null),
+        done: read(KEYS.DONE, [])
       };
     },
 
@@ -124,6 +246,10 @@
       if (data.logs) { write(KEYS.LOGS, data.logs); }
       if (data.plan) { write(KEYS.PLAN, data.plan); }
       if (data.config) { write(KEYS.CONFIG, data.config); }
+      if (data.availability) { write(KEYS.AVAIL, data.availability); }
+      if (data.timetable) { write(KEYS.TIMETABLE, data.timetable); }
+      if (data.done) { write(KEYS.DONE, data.done); }
+      migrate();
       return true;
     },
 
