@@ -103,7 +103,10 @@
     }
     planC.why = '有点难度的事搭配轻松的事，一张一弛，不容易累过头。';
 
-    return [planA, planB, planC].map(function (ps) {
+    // 剔除没有任何安排的方案，保证不出现全部空缺的选项
+    return [planA, planB, planC].filter(function (ps) {
+      return ps.items && ps.items.length > 0;
+    }).map(function (ps) {
       ps.loadPercent = estLoad(ps.items);
       return ps;
     });
@@ -178,15 +181,17 @@
         var planSets = buildPlans(p, scoredMap);
 
         app.appendChild(el('hr', 'section-divider'));
-        var phead = el('div', 'plan-head');
-        phead.appendChild(el('h2', 'section-title', '为你推荐的本周计划'));
-        app.appendChild(phead);
-        app.appendChild(el('p', 'page-sub', '根据你的情况准备了 3 套各有侧重的本周安排。每项时长都能改，改完点「采用此计划」一键生效。'));
+        if (planSets.length > 0) {
+          var phead = el('div', 'plan-head');
+          phead.appendChild(el('h2', 'section-title', '为你推荐的本周计划'));
+          app.appendChild(phead);
+          app.appendChild(el('p', 'page-sub', '根据你的情况准备了 ' + planSets.length + ' 套各有侧重的本周安排。每项时长都能改，改完点「采用此计划」一键生效。'));
 
-        var pgrid = el('div', 'grid cols-3');
-        planSets.forEach(function (ps) { pgrid.appendChild(makePlanCard(ps, p, scoredMap)); });
-        app.appendChild(pgrid);
-        app.appendChild(el('div', 'notice', '采用某套安排后，会替换「本周安排」页面里的清单；之后仍可在活动详情里单独增删。'));
+          var pgrid = el('div', 'grid cols-3');
+          planSets.forEach(function (ps) { pgrid.appendChild(makePlanCard(ps, p, scoredMap)); });
+          app.appendChild(pgrid);
+          app.appendChild(el('div', 'notice', '采用某套安排后，会替换「本周安排」页面里的清单；之后仍可在活动详情里单独增删。'));
+        }
       }
 
       app.appendChild(el('hr', 'section-divider'));
