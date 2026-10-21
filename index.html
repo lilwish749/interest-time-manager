@@ -180,7 +180,9 @@
     .uname{display:none}
     .page-head h2{font-size:1.1rem}
   }
-</style>
+  .ip-select{max-width:150px}
+  </style>
+  <link rel="stylesheet" href="css/interest-pool.css">
 </head>
 <body>
 
@@ -216,7 +218,7 @@
         <button data-tab="add">新增事项</button>
         <button data-tab="admin" id="adminTab" style="display:none">后台统计</button>
         <button data-tab="load">负荷管理系统</button>
-        <button data-tab="interest">兴趣池写入</button>
+        <button data-tab="interest">兴趣池</button>
         <button data-tab="social">社交功能</button>
       </nav>
       <div class="user-area">
@@ -326,15 +328,58 @@
       </div>
     </section>
 
-    <!-- 兴趣池写入(占位,内容待开发) -->
+    <!-- 兴趣池：录入 -> 识别归类 -> 存取 -> 生成可执行计划 -->
     <section id="page-interest" class="page" style="display:none">
-      <div class="page-head"><h2>兴趣池写入</h2><span class="muted">制作中</span></div>
-      <div class="placeholder-card">
-        <div class="ph-icon">🌱</div>
-        <h3>兴趣池写入</h3>
-        <p>这个功能还在制作中，做好后就能用了。</p>
-        <p class="ph-hook">做好后会和「负荷管理系统」「计划时间表」「社交功能」一起配合使用。</p>
+      <div class="page-head">
+        <h2>兴趣池</h2>
+        <span class="muted" id="ipCount"></span>
       </div>
+
+      <div id="ipNotice" class="ip-notice"></div>
+
+      <p class="ip-flow"><b>怎么用：</b>左边写下兴趣 → 点「识别并归类」 → 加入兴趣池 →
+        在右边「我的兴趣池」里点「生成计划」，就会得到一套可以直接照着做的计划。</p>
+
+      <div class="ip-grid">
+        <div class="ip-card">
+          <h3>录入兴趣</h3>
+          <p class="ip-hint">一行写一个。输入时会提示相关兴趣，点一下就能填进去。</p>
+          <div class="ip-editor">
+            <textarea id="ipInput" class="input" rows="6" placeholder="例如：&#10;学钢琴&#10;用 App 学日语&#10;周末爬山健身&#10;读一本认知科学书"></textarea>
+            <div id="ipSuggest" class="ip-suggest" hidden></div>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <button class="btn sm" id="ipClassify">识别并归类</button>
+            <button class="btn ghost sm" id="ipExample">填入示例</button>
+            <button class="btn ghost sm" id="ipClearInput">清空</button>
+          </div>
+          <div id="ipResults" class="ip-results"></div>
+        </div>
+
+        <div class="ip-card">
+          <h3>我的兴趣池</h3>
+          <div class="ip-toolbar">
+            <input id="ipSearch" class="input" placeholder="搜索兴趣">
+            <select id="ipFilter" class="input"></select>
+          </div>
+          <div id="ipList"></div>
+          <p class="ip-hint" id="ipStorageHint"></p>
+        </div>
+      </div>
+
+      <div id="ipPlan" style="margin-top:16px"></div>
+
+      <div class="ip-card" style="margin-top:16px">
+        <div class="ip-card-head">
+          <h3>已经保存的计划</h3>
+          <span class="muted" id="ipSavedCount"></span>
+        </div>
+        <p class="ip-hint">采用过的计划都在这里，随时可以改：换内容、调顺序、改时间、改优先级。每次保存都会留下一条变更记录，改错了能退回上一版。</p>
+        <p class="ip-hint">「删除」删掉的是这份计划本身（包括它的变更记录），删了不能恢复。兴趣池里的兴趣、以及「本周负荷计划」都不会因此被改动。</p>
+        <div id="ipSavedPlans"></div>
+      </div>
+
+      <div id="ipEditor" style="margin-top:16px"></div>
     </section>
 
     <!-- 社交功能(占位,内容待开发) -->
@@ -344,7 +389,7 @@
         <div class="ph-icon">💬</div>
         <h3>社交功能</h3>
         <p>这个功能还在制作中，做好后就能用了。</p>
-        <p class="ph-hook">做好后会和「兴趣池写入」「计划时间表」「负荷管理系统」一起配合使用。</p>
+        <p class="ph-hook">做好后会和「兴趣池」「计划时间表」「负荷管理系统」一起配合使用。</p>
       </div>
     </section>
   </main>
@@ -667,6 +712,7 @@ function switchTab(tab){
   // 负荷管理系统:打开浮窗(不切换主页面)
   if(tab==='load'){openLoadManager();return}
   if(tab==='add'){renderFreeList()}
+  if(tab==='interest'&&window.InterestView){window.InterestView.render()}
   if(tab==='schedule'){renderSchedule();renderDayLoadBadge()}
 }
 
@@ -705,7 +751,58 @@ window.LMSBridge={
   /** 读取本周计划(供计划时间表联动) */
   getPlan(){try{return JSON.parse(localStorage.getItem('lms.plan.v1'))||[]}catch{return []}},
   /** 计划时间表数据(供负荷系统/社交联动读取) */
-  getSchedule(){return Store.getItems().filter(i=>i.date===curDate)}
+  getSchedule(){return Store.getItems().filter(i=>i.date===curDate)},
+
+  /* ---- 安排表写入接口(供兴趣池把计划编进安排表) ----
+     安排表是本程序内置的组成部分:落盘与刷新一律走这里,
+     外部模块只负责把计划换算成条目,不自己碰存储、也不自己画表。
+     这样「编进来的」和「手动新增的」在安排表里完全同质:
+     同一份 tm_items,同一套排序、着色、日负荷计算。 */
+
+  /** 我名下的全部安排表条目(供换算层查重、查冲突) */
+  scheduleItems(){
+    const u=currentUser();
+    return u?Store.getItems().filter(i=>i.phone===u.phone):[]
+  },
+
+  /** 把换算好的条目落进安排表。
+      items:带 id 的按 id 覆盖,不带的视为新增;每条带上编入来源以便重复编入能对上号。
+      rms:  要移除的条目 id(上一次编入留下、这次已经不在计划里的那些)。
+      写完整理一次安排表视图与当日负荷。 */
+  applySchedule(items,rms){
+    const u=currentUser();
+    if(!u)return{ok:false,reason:'nologin'};
+    const arr=Array.isArray(items)?items:[];
+    const del=Array.isArray(rms)?rms:[];
+    if(!arr.length&&!del.length)return{ok:false,reason:'empty'};
+    let all=Store.getItems();
+    const at={};all.forEach((it,i)=>{at[it.id]=i});
+    let added=0,updated=0,removed=0;
+    arr.forEach(t=>{
+      const patch={date:t.date,start:t.start,end:t.end,project:t.project,
+        description:t.description,origin:'plan',planId:t.planId,planRev:t.planRev,slot:t.slot};
+      const i=t.id?at[t.id]:undefined;
+      if(i!==undefined){all[i]=Object.assign({},all[i],patch);updated++}
+      else{all.push(Object.assign({id:uid(),phone:u.phone,createdAt:Date.now()},patch));added++}
+    });
+    if(del.length){
+      const kill={};del.forEach(id=>{kill[id]=1});
+      all=all.filter(it=>{if(kill[it.id]){removed++;return false}return true});
+    }
+    Store.saveItems(all);
+    /* 停在最早一条落进去的日期:用户切回安排表就能直接看到结果 */
+    const ds=arr.map(t=>t.date).sort();
+    const focus=ds.length?ds[0]:null;
+    if(focus&&/^\d{4}-\d{2}-\d{2}$/.test(focus))curDate=focus;
+    renderSchedule();renderFreeList();renderDayLoadBadge();
+    return{ok:true,added,updated,removed,focus}
+  },
+
+  /** 切到安排表并停在指定日期 */
+  focusSchedule(date){
+    if(date&&/^\d{4}-\d{2}-\d{2}$/.test(date))curDate=date;
+    switchTab('schedule');
+  }
 };
 
 /* 日负荷等级分级:依据负荷管理系统画像 + 当日事项时长
@@ -811,6 +908,33 @@ window.addEventListener('DOMContentLoaded',()=>{
   else $('auth').style.display='flex';
   // 实时检测,即使跨分钟也能及时触发
   setInterval(checkReminder,10000);
+});
+</script>
+
+<!-- ============================================================
+     兴趣池模块
+     复用负荷管理系统的评分引擎（纯函数，不重复实现），再加载兴趣池自身
+     的识别层 / 存储层 / 计划生成 / 界面层。
+     顺序要求：必须放在上方内联脚本之后——内联脚本以 const 形式声明了
+     Store / $ 等依赖，提前加载会触发暂时性死区报错。
+============================================================ -->
+<script src="load-manager/data/activities.js"></script>
+<script src="load-manager/js/engine.js"></script>
+<script src="load-manager/js/store.js"></script>
+<script src="js/interest-classifier.js"></script>
+<script src="js/interest-pool.js"></script>
+<script src="js/planner.js"></script>
+<script src="js/plan-editor.js"></script>
+<script src="js/interest-view.js"></script>
+<script src="js/plan-edit-view.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  if(window.InterestPool&&window.InterestPool.isStorageAvailable&&!window.InterestPool.isStorageAvailable()){
+    var box=document.getElementById('ipStorageHint');
+    if(box){box.textContent='提示：浏览器未允许本地保存，兴趣池只在本次打开期间有效。';}
+  }
+  if(window.InterestView){window.InterestView.init();}
+  if(window.PlanEditView){window.PlanEditView.init();}
 });
 </script>
 </body>

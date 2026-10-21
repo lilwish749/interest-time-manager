@@ -174,7 +174,32 @@
     }
   };
 
-  var LMS_DATA = { ACTIVITIES: ACTIVITIES, DEMO_PROFILES: DEMO_PROFILES };
+  /* 运行期扩展：把兴趣池新增的活动并入活动清单，使负荷系统也能识别这些兴趣。
+     仅在浏览器且存在本地记录时生效；Node（测试）环境自动跳过，结果不受影响。 */
+  function mergeRuntimeActivities() {
+    try {
+      if (typeof localStorage === 'undefined') { return; }
+      var raw = localStorage.getItem('lms.activities.v1');
+      if (!raw) { return; }
+      var extra = JSON.parse(raw);
+      if (!Array.isArray(extra)) { return; }
+      extra.forEach(function (act) {
+        if (!act || !act.id || !act.name || !act.domain) { return; }
+        for (var i = 0; i < ACTIVITIES.length; i++) {
+          if (ACTIVITIES[i].id === act.id) { return; }
+        }
+        ACTIVITIES.push(act);
+      });
+    } catch (e) { /* 本地记录不可读时保持内置清单不变 */ }
+  }
+  mergeRuntimeActivities();
+
+  var LMS_DATA = {
+    ACTIVITIES: ACTIVITIES,
+    DEMO_PROFILES: DEMO_PROFILES,
+    /* 供需在运行期新增活动后立刻重跑合并，否则本会话内排程找不到该活动 */
+    refreshRuntimeActivities: mergeRuntimeActivities
+  };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = LMS_DATA;
   else root.LMS_DATA = LMS_DATA;
