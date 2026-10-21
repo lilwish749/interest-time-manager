@@ -677,6 +677,31 @@
       bar.appendChild(barBtns);
       app.appendChild(bar);
 
+      // 计划里有、但这份旧时间表里没排到的项：提示重排。
+      // 不自动重排，否则会冲掉用户手动「换时间」挪过的位置。
+      if (ttValid) {
+        var inTT = {}, wasUnsched = {};
+        stored.days.forEach(function (d) {
+          (d.blocks || []).forEach(function (b) { inTT[b.activityId] = true; });
+        });
+        (stored.unscheduled || []).forEach(function (u) { wasUnsched[u.activityId] = true; });
+        var missing = [];
+        plan.forEach(function (it) {
+          if (it && it.activityId && !inTT[it.activityId] && !wasUnsched[it.activityId] && missing.indexOf(it.activityId) < 0) {
+            missing.push(it.activityId);
+          }
+        });
+        if (missing.length > 0) {
+          var names = missing.map(function (id) {
+            var a = DATA.ACTIVITIES.filter(function (x) { return x.id === id; })[0];
+            return esc(a ? a.name : id);
+          });
+          app.appendChild(el('div', 'notice warn',
+            '本周安排有更新：' + names.slice(0, 3).join('、') + (names.length > 3 ? ' 等 ' + names.length + ' 项' : '') +
+            ' 还没排进这份时间表。点上面的「重新生成」重排一下。'));
+        }
+      }
+
       // 状态二：有计划但还没时间表 → 一个大按钮
       if (!ttValid) {
         var gen = el('div', 'card week-empty');
